@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "scheme": "zeropaste",
+    "userInterfaceStyle": "automatic",
+    "orientation": "default",
+    "web": {
+      "bundler": "metro"
+    },
+    "name": "ZeroPaste",
+    "slug": "zeropaste",
+    "plugins": ["expo-font", "expo-secure-store"],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "android": {
+      "package": "app.zeropaste.mobile"
+    }
+  }
+}

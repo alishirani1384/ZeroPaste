@@ -1,0 +1,21 @@
+{
+  "name": "@paste/sync",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@paste/clipboard-core": "workspace:*",
+    "@paste/crypto": "workspace:*",
+    "@supabase/supabase-js": "^2.57.4"
+  },
+  "devDependencies": {
+    "@paste/config": "workspace:*",
+    "typescript": "^6"
+  }
+}

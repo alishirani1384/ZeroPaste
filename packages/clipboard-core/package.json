@@ -1,0 +1,16 @@
+{
+  "name": "@paste/clipboard-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@paste/config": "workspace:*",
+    "typescript": "^6"
+  }
+}

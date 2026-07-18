@@ -1,0 +1,37 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@paste/clipboard-core": "workspace:*",
+    "@paste/crypto": "workspace:*",
+    "@paste/env": "workspace:*",
+    "@paste/sync": "workspace:*",
+    "@paste/ui": "workspace:*",
+    "@supabase/supabase-js": "^2.57.4",
+    "@swc/helpers": "^0.5.23",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "dotenv": "catalog:",
+    "lucide-react": "catalog:",
+    "next": "^16.2.0",
+    "next-themes": "catalog:",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "sonner": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@paste/config": "workspace:*",
+    "@tailwindcss/postcss": "catalog:",
+    "@types/node": "^20",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "^6"
+  }
+}
