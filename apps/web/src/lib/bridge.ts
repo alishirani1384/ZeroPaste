@@ -83,6 +83,33 @@ export async function pasteClip(id: string, plain = false) {
   }
 }
 
+/** Host watches OS mouse button; resolves when user releases (pastes then). */
+export async function dragPaste(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BRIDGE}/drag-paste`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const data = (await res.json()) as { ok?: boolean };
+    return !!data.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function cancelDragPaste() {
+  try {
+    await fetch(`${BRIDGE}/drag-paste`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "cancel" }),
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
 export async function pauseCapture(durationMs: number | null) {
   try {
     await fetch(`${BRIDGE}/pause`, {
@@ -92,6 +119,19 @@ export async function pauseCapture(durationMs: number | null) {
     });
   } catch {
     /* demo mode */
+  }
+}
+
+export async function updateClipBody(id: string, body: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BRIDGE}/clip-update`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, body }),
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 

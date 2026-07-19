@@ -1,6 +1,15 @@
-import { Utils } from "electrobun/bun";
-
-import { getState, removeClip, setCompact, setPaused, subscribe } from "./store";
+import { normalizeClipboardImage } from "./image-format";
+import { getClipMedia, putClipMedia } from "./media-store";
+import { cancelDragPaste, runDragPaste } from "./drag-paste";
+import { pasteClipById } from "./paste";
+import {
+  getState,
+  removeClip,
+  setCompact,
+  setPaused,
+  subscribe,
+  updateClipBody,
+} from "./store";
 import {
   HOST_BUILD,
   fitWindow,
@@ -30,7 +39,13 @@ export function startBridgeServer() {
 
       if (url.pathname === "/health") {
         return Response.json(
-          { ok: true, app: "ZeroPaste", hostBuild: HOST_BUILD, mode: getWindowMode() },
+          {
+            ok: true,
+            app: "ZeroPaste",
+            hostBuild: HOST_BUILD,
+            mode: getWindowMode(),
+            platform: process.platform,
+          },
           { headers },
         );
       }
@@ -116,12 +131,62 @@ export function startBridgeServer() {
         });
       }
 
+      if (url.pathname.startsWith("/clip-media/") && req.method === "GET") {
+        const id = url.pathname.slice("/clip-media/".length);
+        const media = getClipMedia(id);
+        if (!media) return new Response("Not found", { status: 404, headers });
+        // Re-normalize legacy raw DIB blobs captured before image-format fix.
+        const normalized = normalizeClipboardImage(media.display);
+        if (
+          normalized.mimeType !== media.displayMime ||
+          normalized.bytes.byteLength !== media.display.byteLength
+        ) {
+          putClipMedia(id, normalized.bytes, normalized.mimeType, media.paste);
+        }
+        return new Response(normalized.bytes, {
+          headers: {
+            ...headers,
+            "Content-Type": normalized.mimeType,
+            "Cache-Control": "no-store",
+          },
+        });
+      }
+
+      if (url.pathname === "/clip-update" && req.method === "POST") {
+        const body = (await req.json()) as { id?: string; body?: string };
+        if (!body.id || typeof body.body !== "string") {
+          return Response.json({ error: "invalid" }, { status: 400, headers });
+        }
+        const ok = updateClipBody(body.id, body.body);
+        if (!ok) return Response.json({ error: "not_editable" }, { status: 400, headers });
+        return Response.json(getState(), { headers });
+      }
+
       if (url.pathname === "/paste" && req.method === "POST") {
         const body = (await req.json()) as { id?: string; plain?: boolean };
-        const clip = getState().clips.find((c) => c.id === body.id && !c.deletedAt);
-        if (!clip) return Response.json({ error: "not_found" }, { status: 404, headers });
-        const text = clip.kind === "image" ? clip.title : clip.body;
-        Utils.clipboardWriteText(text);
+        if (!body.id) return Response.json({ error: "missing_id" }, { status: 400, headers });
+        const result = await pasteClipById(body.id);
+        if (!result.ok) {
+          return Response.json({ error: result.error }, { status: 400, headers });
+        }
+        return Response.json({ ok: true }, { headers });
+      }
+
+      // Drag-to-paste: blocks until OS left button releases, then pastes.
+      if (url.pathname === "/drag-paste" && req.method === "POST") {
+        const body = (await req.json()) as { id?: string; action?: "start" | "cancel" };
+        if (body.action === "cancel") {
+          cancelDragPaste();
+          return Response.json({ ok: true }, { headers });
+        }
+        if (!body.id) return Response.json({ error: "missing_id" }, { status: 400, headers });
+        const result = await runDragPaste(body.id);
+        if (!result.ok) {
+          return Response.json(
+            { ok: false, error: result.error ?? "drag_failed" },
+            { status: result.error === "cancelled" ? 200 : 400, headers },
+          );
+        }
         return Response.json({ ok: true }, { headers });
       }
 

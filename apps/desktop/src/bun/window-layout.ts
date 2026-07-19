@@ -1,9 +1,11 @@
 import { Screen, type BrowserWindow } from "electrobun/bun";
 
+import { applyNoActivateByTitle, clearNoActivateByTitle } from "./noactivate";
+
 export type WindowMode = "panel" | "vault";
 
 /** Bump when host logic changes — must appear in Electrobun terminal + /health. */
-export const HOST_BUILD = "zeropaste-host-2026-07-19-g";
+export const HOST_BUILD = "zeropaste-host-2026-07-19-linux1";
 
 /**
  * Electrobun Windows + transparent:true cannot reliably GROW the CEF/OSR
@@ -157,6 +159,9 @@ export function placeWindow(next: WindowMode) {
   placeTimer = setTimeout(() => {
     placeTimer = null;
     applyPosition(frame, next);
+    // Panel: clicks must not steal caret. Vault: allow typing passphrase.
+    if (next === "panel") void applyNoActivateByTitle();
+    else void clearNoActivateByTitle();
   }, 16);
 }
 

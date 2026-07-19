@@ -276,17 +276,61 @@ body.dark,
 .zp-timeline {
   display: flex;
   align-items: stretch;
-  gap: 12px;
+  gap: 14px;
   /* Fill remaining shelf height under toolbar/footer (window is fixed ~320px) */
   height: 236px;
   min-height: 236px;
   max-height: 236px;
-  padding: 8px 16px 10px;
+  /* Side inset so #1 / last card aren't glued to the window edge */
+  padding: 8px 28px 14px;
   overflow-x: auto;
   overflow-y: hidden;
-  scroll-snap-type: x proximity;
-  scrollbar-width: thin;
+  scroll-snap-type: none;
+  scroll-padding-inline: 28px;
   box-sizing: border-box;
+  scrollbar-width: auto;
+  scrollbar-color: oklch(0.55 0.02 260 / 0.55) oklch(0.5 0.02 260 / 0.12);
+}
+
+.zp-timeline::-webkit-scrollbar {
+  height: 10px;
+}
+
+.zp-timeline::-webkit-scrollbar-track {
+  margin-inline: 28px;
+  background: oklch(0.5 0.02 260 / 0.1);
+  border-radius: 999px;
+}
+
+.zp-timeline::-webkit-scrollbar-thumb {
+  background: oklch(0.55 0.02 260 / 0.45);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.zp-timeline::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.62 0.19 32 / 0.55);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+.zp-image-fallback {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--zp-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Drag-to-paste: no free-floating ghost (CEF can't leave the window). */
+.zp-drag-hint {
+  color: var(--zp-crimson);
+  font-weight: 600;
 }
 
 .zp-card {
@@ -623,33 +667,37 @@ body.dark,
   line-height: 1.4;
 }
 
-/* Quick Look */
+/* Quick Look — full Electrobun window (portaled to body), above the shelf */
 .zp-ql {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: 200;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: 28px 36px;
 }
 
 .zp-ql-backdrop {
   position: absolute;
   inset: 0;
-  background: oklch(0.1 0.02 260 / 0.45);
-  backdrop-filter: blur(6px);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  background: oklch(0.08 0.02 260 / 0.62);
+  backdrop-filter: blur(10px) saturate(1.1);
 }
 
 .zp-ql-sheet {
   position: relative;
-  width: min(720px, 100%);
-  max-height: min(80svh, 640px);
+  width: min(920px, 100%);
+  height: min(520px, calc(100% - 8px));
+  max-height: calc(100vh - 56px);
   display: grid;
-  grid-template-rows: auto 1fr auto auto;
+  grid-template-rows: auto minmax(160px, 1fr) auto auto;
   background: var(--zp-panel);
   border: 1px solid var(--zp-line);
-  border-radius: 20px;
-  box-shadow: 0 24px 80px var(--zp-shadow);
+  border-radius: 18px;
+  box-shadow: 0 28px 80px oklch(0 0 0 / 0.45);
   overflow: hidden;
 }
 
@@ -677,7 +725,7 @@ body.dark,
 
 .zp-ql-body {
   overflow: auto;
-  min-height: 160px;
+  min-height: 0;
   background: oklch(0.5 0.02 260 / 0.04);
 }
 
@@ -699,11 +747,39 @@ body.dark,
   min-height: 100%;
 }
 
+.zp-ql-editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 140px;
+  margin: 0;
+  padding: 16px 18px;
+  border: 0;
+  resize: none;
+  outline: none;
+  background: transparent;
+  color: var(--zp-ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.zp-ql-editor--code {
+  font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+  font-size: 12.5px;
+  background: var(--zp-code-bg);
+  color: var(--zp-code-fg);
+}
+
 .zp-ql-image {
   display: block;
   max-width: 100%;
-  max-height: 360px;
-  margin: 0 auto;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  margin: 12px auto;
   object-fit: contain;
 }
 
@@ -755,10 +831,18 @@ body.dark,
   border-top: 1px solid var(--zp-line);
 }
 
-.zp-ql-foot .zp-gate-primary {
+.zp-ql-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zp-ql-foot .zp-gate-primary,
+.zp-ql-foot .zp-auth-secondary {
   width: auto;
-  min-width: 120px;
-  padding: 0 18px;
+  min-width: 100px;
+  padding: 0 16px;
+  height: 36px;
 }
 
 .zp-ql-hint {

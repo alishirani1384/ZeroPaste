@@ -10,6 +10,7 @@ import {
   pauseCapture,
   setDesktopWindowMode,
   subscribeBridge,
+  updateClipBody,
   type BridgeState,
 } from "@/lib/bridge";
 import { useVault } from "@/components/vault/vault-context";
@@ -26,8 +27,10 @@ export function ClipboardPanel() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [compact, setCompact] = useState(false);
   const [quickLook, setQuickLook] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const didInitScroll = useRef(false);
 
   useEffect(() => subscribeBridge(setState), []);
 
@@ -54,24 +57,58 @@ export function ClipboardPanel() {
     await pasteClip(clip.id);
   }, []);
 
+  const openQuickLook = useCallback((id?: string) => {
+    if (id) setSelectedId(id);
+    setQuickLook(true);
+  }, []);
+
+  // Start at the left (#1) — do not scrollIntoView on boot (that centered the shelf).
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el || didInitScroll.current || clips.length === 0) return;
+    el.scrollLeft = 0;
+    didInitScroll.current = true;
+  }, [clips.length]);
+
+  // CEF often delivers wheel to the window, not the overflow element — capture globally.
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      if (quickLook) return;
+      const el = scrollerRef.current;
+      if (!el || el.scrollWidth <= el.clientWidth + 2) return;
+      const target = e.target;
+      if (target instanceof Element) {
+        if (target.closest("input, textarea, .zp-ql")) return;
+      }
+      const dx = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+      if (dx === 0) return;
+      e.preventDefault();
+      el.scrollLeft += dx;
+    };
+    window.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    return () => window.removeEventListener("wheel", onWheel, { capture: true });
+  }, [quickLook, clips.length]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        if (e.key === "Escape") (e.target as HTMLElement).blur();
+        if (e.key === "Escape") {
+          if (quickLook) {
+            e.preventDefault();
+            setQuickLook(false);
+          } else {
+            (e.target as HTMLElement).blur();
+          }
+        }
         return;
       }
 
-      if (e.key === " " && !quickLook) {
+      if (e.key === " " ) {
         e.preventDefault();
-        if (selected) setQuickLook(true);
+        if (selected) setQuickLook((v) => !v);
         return;
       }
       if (e.key === "Escape" && quickLook) {
-        e.preventDefault();
-        setQuickLook(false);
-        return;
-      }
-      if (e.key === " " && quickLook) {
         e.preventDefault();
         setQuickLook(false);
         return;
@@ -82,12 +119,24 @@ export function ClipboardPanel() {
       if (e.key === "ArrowRight") {
         e.preventDefault();
         const next = clips[Math.min(selectedIndex + 1, clips.length - 1)];
-        if (next) setSelectedId(next.id);
+        if (next) {
+          setSelectedId(next.id);
+          scrollerRef.current
+            ?.querySelector<HTMLElement>(`[aria-selected="true"]`)
+            ?.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
+        }
       }
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         const prev = clips[Math.max(selectedIndex - 1, 0)];
-        if (prev) setSelectedId(prev.id);
+        if (prev) {
+          setSelectedId(prev.id);
+          requestAnimationFrame(() => {
+            scrollerRef.current
+              ?.querySelector<HTMLElement>(`[aria-selected="true"]`)
+              ?.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
+          });
+        }
       }
       if (e.key === "Enter" && selectedId) {
         e.preventDefault();
@@ -109,11 +158,6 @@ export function ClipboardPanel() {
   }, [activate, clips, selectedId, selectedIndex, quickLook, selected]);
 
   useEffect(() => {
-    const el = scrollerRef.current?.querySelector<HTMLElement>(`[aria-selected="true"]`);
-    el?.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
-  }, [selectedId]);
-
-  useEffect(() => {
     const panel = panelRef.current;
     if (!panel) return;
     const ro = new ResizeObserver((entries) => {
@@ -124,14 +168,27 @@ export function ClipboardPanel() {
     return () => ro.disconnect();
   }, []);
 
-  // Place shelf once. Host uses fixed panel size (content is width:100%).
   useEffect(() => {
     const t = window.setTimeout(() => void setDesktopWindowMode("panel"), 100);
     return () => window.clearTimeout(t);
   }, []);
 
   return (
-    <div ref={panelRef} className="zp-panel">
+    <div
+      ref={panelRef}
+      className="zp-panel"
+      onMouseDown={(e) => {
+        // Keep OS caret in the target app — don't focus shelf chrome on click.
+        const t = e.target;
+        if (
+          t instanceof HTMLElement &&
+          t.closest("input, textarea, button, a, [contenteditable='true']")
+        ) {
+          return;
+        }
+        e.preventDefault();
+      }}
+    >
       <div className="zp-resize-hint" aria-hidden />
       <PanelToolbar
         boards={state.pinboards}
@@ -162,7 +219,9 @@ export function ClipboardPanel() {
               selected={clip.id === selectedId}
               compact={compact || state.compact}
               onSelect={() => setSelectedId(clip.id)}
-              onActivate={() => void activate(clip)}
+              onPaste={() => void activate(clip)}
+              onQuickLook={() => openQuickLook(clip.id)}
+              onDraggingChange={setDragActive}
             />
           ))
         )}
@@ -175,8 +234,13 @@ export function ClipboardPanel() {
           {paused ? " · Capture paused" : ""}
         </span>
         <span className="zp-footer-hints">
-          <kbd>Space</kbd> Quick Look · <kbd>←</kbd>
-          <kbd>→</kbd> · <kbd>↵</kbd> paste · <kbd>Ctrl+F</kbd>
+          {dragActive ? (
+            <span className="zp-drag-hint">Release to paste into the app under the caret</span>
+          ) : (
+            <>
+              Click to paste · drag &amp; release to paste · <kbd>Space</kbd> Quick Look
+            </>
+          )}
         </span>
       </footer>
 
@@ -184,9 +248,9 @@ export function ClipboardPanel() {
         <QuickLook
           clip={selected}
           onClose={() => setQuickLook(false)}
-          onPaste={() => {
-            void activate(selected);
-            setQuickLook(false);
+          onSave={async (body) => {
+            const ok = await updateClipBody(selected.id, body);
+            return ok;
           }}
         />
       ) : null}

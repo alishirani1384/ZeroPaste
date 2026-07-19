@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "electrobun dev",
-    "dev:hmr": "bun run clean:build && concurrently \"bun run hmr\" \"electrobun dev --watch\"",
+    "dev:hmr": "concurrently -k -n web,desktop -c cyan,magenta \"bun run hmr\" \"electrobun dev --watch\"",
     "hmr": "turbo run dev -F web",
     "clean:build": "node -e \"try{require('fs').rmSync('build',{recursive:true,force:true})}catch(e){}\"",
     "build": "turbo run build -F web && electrobun build",

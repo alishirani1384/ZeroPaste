@@ -11,6 +11,8 @@ export type CreateClipInput = {
   imageDataUrl?: string;
   id?: string;
   createdAt?: string;
+  /** Override size (e.g. raw PNG bytes instead of URL string length). */
+  byteSize?: number;
 };
 
 export async function createClipFromCapture(input: CreateClipInput): Promise<ClipItem> {
@@ -24,12 +26,12 @@ export async function createClipFromCapture(input: CreateClipInput): Promise<Cli
   return {
     id: input.id ?? crypto.randomUUID(),
     kind,
-    title: titleFromContent(kind, input.body || "Image"),
+    title: titleFromContent(kind, kind === "image" ? "Image" : input.body),
     preview: previewFromContent(kind, body),
     body,
     html: input.html,
     mimeType: input.mimeType ?? (kind === "image" ? "image/png" : "text/plain"),
-    byteSize: new TextEncoder().encode(body).byteLength,
+    byteSize: input.byteSize ?? new TextEncoder().encode(body).byteLength,
     contentHash: hash,
     source: input.source,
     createdAt: now,

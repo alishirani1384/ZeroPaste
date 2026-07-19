@@ -27,6 +27,8 @@ bun run dev:native     # Expo
 
 Desktop hotkey: **Ctrl+Shift+V**. Bridge API: `http://127.0.0.1:47821`.
 
+**Linux:** see [apps/desktop/LINUX.md](./apps/desktop/LINUX.md) for X11 (`xdotool`, `xclip`) and Wayland (`wtype`/`ydotool`, `wl-copy`) paste tools. Electrobun needs GTK/WebKitGTK build deps on Ubuntu 22.04+.
+
 ### Vault (E2E)
 
 On first launch, create a vault passphrase and save the recovery key. Unlock is required before the clipboard shelf. Lock from the toolbar. Account/sync UI: `/account`.
