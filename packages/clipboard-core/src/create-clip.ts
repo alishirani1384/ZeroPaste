@@ -24,7 +24,9 @@ export async function createClipFromCapture(input: CreateClipInput): Promise<Cli
   const hash = await contentHash(body);
 
   return {
-    id: input.id ?? crypto.randomUUID(),
+    id: input.id ?? (typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID()
+      : `clip_${Date.now().toString(16)}_${Math.random().toString(16).slice(2)}`),
     kind,
     title: titleFromContent(kind, kind === "image" ? "Image" : input.body),
     preview: previewFromContent(kind, body),

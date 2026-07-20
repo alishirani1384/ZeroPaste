@@ -1,20 +1,60 @@
 {
   "expo": {
-    "scheme": "zeropaste",
-    "userInterfaceStyle": "automatic",
-    "orientation": "default",
-    "web": {
-      "bundler": "metro"
-    },
     "name": "ZeroPaste",
     "slug": "zeropaste",
-    "plugins": ["expo-font", "expo-secure-store"],
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "zeropaste",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1C1C1E"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.zeropaste.mobile",
+      "icon": "./assets/icon.png"
+    },
+    "android": {
+      "package": "app.zeropaste.mobile",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1C1C1E"
+      },
+      "permissions": [
+        "android.permission.PACKAGE_USAGE_STATS",
+        "android.permission.INTERNET",
+        "android.permission.VIBRATE",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-secure-store",
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#1C1C1E",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    },
-    "android": {
-      "package": "app.zeropaste.mobile"
     }
   }
 }

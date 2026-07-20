@@ -2,22 +2,27 @@ import type { ClipItem } from "@paste/clipboard-core";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { decryptClip, encryptClip } from "./clip-crypto";
+import { getSyncStorage, type SyncStorage } from "./storage";
 import type { ClipRow } from "./types";
 
 export type { ClipRow } from "./types";
 export { encryptClip, decryptClip } from "./clip-crypto";
+export { setSyncStorage, getSyncStorage, type SyncStorage } from "./storage";
 
-export function createSupabase(url: string, anonKey: string): SupabaseClient {
+export function createSupabase(
+  url: string,
+  anonKey: string,
+  opts?: { storage?: SyncStorage; detectSessionInUrl?: boolean },
+): SupabaseClient {
+  const storage = opts?.storage ?? getSyncStorage() ?? undefined;
   return createClient(url, anonKey, {
     auth: {
       // Keep the account signed in across launches; refresh tokens renew the session
       // until revoked or the project’s refresh-token lifetime ends (configure in Supabase).
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true,
-      storage: typeof globalThis !== "undefined" && "localStorage" in globalThis
-        ? globalThis.localStorage
-        : undefined,
+      detectSessionInUrl: opts?.detectSessionInUrl ?? true,
+      storage,
     },
   });
 }

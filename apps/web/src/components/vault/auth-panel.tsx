@@ -107,7 +107,16 @@ export function AuthPanel() {
           </p>
           <label className="zp-gate-field">
             <span>Email</span>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" />
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              name="email"
+              autoComplete="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
           </label>
           <PasswordField
             label="Password"

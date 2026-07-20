@@ -62,12 +62,8 @@ function collectTargets(dir: string, out: string[] = []): string[] {
       continue;
     }
     const lower = name.toLowerCase();
-    if (
-      lower.endsWith(".exe") ||
-      lower === "launcher" ||
-      lower === "bun" ||
-      lower.startsWith("zeropaste-setup")
-    ) {
+    // Only PE binaries — skip archives / metadata that happen to match name prefixes.
+    if (lower.endsWith(".exe") || lower === "launcher" || lower === "bun") {
       out.push(full);
     }
   }

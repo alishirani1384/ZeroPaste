@@ -1,22 +1,29 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { getSyncStorage } from "./storage";
+
 export type DevicePlatform = "windows" | "linux" | "macos" | "web" | "android" | "ios";
 
 const DEVICE_ID_KEY = "zeropaste.device.id";
 
 export function loadLocalDeviceId(): string | null {
-  if (typeof localStorage === "undefined") return null;
+  const storage = getSyncStorage();
+  if (!storage) return null;
   try {
-    return localStorage.getItem(DEVICE_ID_KEY);
+    const value = storage.getItem(DEVICE_ID_KEY);
+    // Device helpers are sync; RN must hydrate a memory-backed SyncStorage first.
+    if (value == null || typeof value === "object") return null;
+    return typeof value === "string" ? value : null;
   } catch {
     return null;
   }
 }
 
 export function saveLocalDeviceId(id: string) {
-  if (typeof localStorage === "undefined") return;
+  const storage = getSyncStorage();
+  if (!storage) return;
   try {
-    localStorage.setItem(DEVICE_ID_KEY, id);
+    void storage.setItem(DEVICE_ID_KEY, id);
   } catch {
     /* ignore */
   }
@@ -41,7 +48,11 @@ export function defaultDeviceName(platform: DevicePlatform = detectDevicePlatfor
         ? "Linux"
         : platform === "macos"
           ? "macOS"
-          : "Device";
+          : platform === "android"
+            ? "Android"
+            : platform === "ios"
+              ? "iOS"
+              : "Device";
   return `ZeroPaste · ${label}`;
 }
 
@@ -54,7 +65,11 @@ export async function registerDevice(
   const platform = opts?.platform ?? detectDevicePlatform();
   const name = opts?.name ?? defaultDeviceName(platform);
   const existing = loadLocalDeviceId();
-  const id = existing ?? crypto.randomUUID();
+  const id =
+    existing ??
+    (typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`);
   const now = new Date().toISOString();
 
   if (existing) {

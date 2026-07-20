@@ -1,8 +1,10 @@
 import { gcm } from "@noble/ciphers/aes.js";
-import { argon2id } from "@noble/hashes/argon2.js";
+import { argon2id as argon2idNoble } from "@noble/hashes/argon2.js";
 import { bytesToHex, hexToBytes, randomBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { argon2id as argon2idWasm } from "hash-wasm";
 
-const ARGON2_OPTS = {
+/** Must stay identical across desktop + mobile so cloud vaults unlock everywhere. */
+export const ARGON2_OPTS = {
   t: 3,
   m: 64 * 1024,
   p: 1,
@@ -20,6 +22,15 @@ export type WrappedKey = {
   nonce: string;
   wrapped: string;
 };
+
+export type Argon2idDeriveFn = (password: Uint8Array, salt: Uint8Array) => Promise<Uint8Array>;
+
+/** Optional host override (e.g. React Native WebView when Hermes has no WebAssembly). */
+let argon2Override: Argon2idDeriveFn | null = null;
+
+export function setArgon2idDerive(fn: Argon2idDeriveFn | null) {
+  argon2Override = fn;
+}
 
 function toB64(bytes: Uint8Array): string {
   if (typeof Buffer !== "undefined") return Buffer.from(bytes).toString("base64");
@@ -48,12 +59,54 @@ export function generateRecoveryKey(): string {
   return bytesToHex(randomBytes(32));
 }
 
-export function deriveKeyFromPassphrase(passphrase: string, salt: Uint8Array): Uint8Array {
-  return argon2id(utf8ToBytes(passphrase), salt, ARGON2_OPTS);
+function isReactNative() {
+  return typeof navigator !== "undefined" && (navigator as { product?: string }).product === "ReactNative";
 }
 
-export function deriveKeyFromRecovery(recoveryKeyHex: string, salt: Uint8Array): Uint8Array {
-  return argon2id(hexToBytes(recoveryKeyHex.trim()), salt, ARGON2_OPTS);
+/**
+ * Prefer host override (RN WebView) → hash-wasm → @noble (desktop only).
+ * Never run @noble Argon2 on RN — it freezes Hermes at m=64MiB.
+ */
+async function argon2idDerive(password: Uint8Array, salt: Uint8Array): Promise<Uint8Array> {
+  if (argon2Override) {
+    return argon2Override(password, salt);
+  }
+
+  try {
+    const hash = await argon2idWasm({
+      password,
+      salt,
+      parallelism: ARGON2_OPTS.p,
+      iterations: ARGON2_OPTS.t,
+      memorySize: ARGON2_OPTS.m,
+      hashLength: ARGON2_OPTS.dkLen,
+      outputType: "binary",
+    });
+    return hash instanceof Uint8Array ? hash : new Uint8Array(hash);
+  } catch (err) {
+    if (isReactNative()) {
+      console.warn("[crypto] hash-wasm Argon2 failed on RN", err);
+      throw new Error(
+        "Vault unlock needs a WebAssembly bridge. Wait for the app to finish loading, then try again.",
+      );
+    }
+    console.warn("[crypto] hash-wasm Argon2 failed, falling back to @noble", err);
+    return argon2idNoble(password, salt, ARGON2_OPTS);
+  }
+}
+
+export async function deriveKeyFromPassphrase(
+  passphrase: string,
+  salt: Uint8Array,
+): Promise<Uint8Array> {
+  return argon2idDerive(utf8ToBytes(passphrase), salt);
+}
+
+export async function deriveKeyFromRecovery(
+  recoveryKeyHex: string,
+  salt: Uint8Array,
+): Promise<Uint8Array> {
+  return argon2idDerive(hexToBytes(recoveryKeyHex.trim()), salt);
 }
 
 /** @deprecated use deriveKeyFromPassphrase */

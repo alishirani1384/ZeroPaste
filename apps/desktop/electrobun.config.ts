@@ -19,6 +19,7 @@ export default {
     copy: {
       [webBuildDir]: "views/mainview",
       "assets/tray.png": "views/mainview/tray.png",
+      "assets/tray.ico": "views/mainview/tray.ico",
       "assets/zeropaste.png": "views/mainview/zeropaste.png",
     },
     watchIgnore: [`${webBuildDir}/**`],

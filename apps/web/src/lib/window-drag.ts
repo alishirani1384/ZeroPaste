@@ -34,6 +34,14 @@ export function windowDragHandlers() {
   return {
     onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
       if (e.button !== 0) return;
+      // Close / interactive children live inside drag chrome — don't steal their clicks.
+      const t = e.target;
+      if (
+        t instanceof Element &&
+        t.closest("button, a, input, textarea, select, [data-no-drag]")
+      ) {
+        return;
+      }
       dragging = true;
       pointerId = e.pointerId;
       try {

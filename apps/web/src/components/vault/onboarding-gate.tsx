@@ -7,7 +7,9 @@ import { toast } from "sonner";
 
 import { PasswordField } from "@/components/password-field";
 import { WindowCloseButton } from "@/components/window-close-button";
+import { useDesktopWindowFit } from "@/components/desktop-window-fit";
 import { setDesktopWindowMode, suppressCapture } from "@/lib/bridge";
+import { fitDesktopWindow } from "@/lib/window-fit";
 import { useAuth } from "@/lib/auth-session";
 import { saveVaultMeta } from "@/lib/vault-storage";
 import { windowDragHandlers } from "@/lib/window-drag";
@@ -16,9 +18,11 @@ import { useVault } from "./vault-context";
 
 function GateDragBar({ label, drag }: { label: string; drag: ReturnType<typeof windowDragHandlers> }) {
   return (
-    <div className="zp-gate-drag" {...drag}>
-      <GripHorizontal className="size-4 opacity-50" />
-      <span>{label}</span>
+    <div className="zp-gate-drag">
+      <div className="zp-gate-drag-hit" {...drag}>
+        <GripHorizontal className="size-4 opacity-50" />
+        <span>{label}</span>
+      </div>
       <WindowCloseButton className="zp-gate-close" title="Close window" />
     </div>
   );
@@ -31,6 +35,7 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   const vault = useVault();
   const drag = useMemo(() => windowDragHandlers(), []);
+  const stackRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<"passphrase" | "recovery">("passphrase");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -45,6 +50,42 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
 
   const showingGate = !vault.unlocked || Boolean(vault.recoveryKeyOnce);
   const needAuth = auth.configured && !auth.readyForVault;
+
+  const gateRevision = auth.loading
+    ? "boot"
+    : needAuth
+      ? "auth"
+      : vault.recoveryKeyOnce
+        ? "recovery-key"
+        : !vault.meta
+          ? cloudProbe === "loading" || cloudProbe === "idle"
+            ? "cloud-probe"
+            : "setup"
+          : mode;
+
+  useDesktopWindowFit(
+    stackRef,
+    "vault",
+    showingGate || needAuth || auth.loading,
+    gateRevision,
+  );
+
+  // Immediate fit on step change (don't wait for ResizeObserver debounce).
+  useEffect(() => {
+    if (!(showingGate || needAuth || auth.loading)) return;
+    const id = window.requestAnimationFrame(() => {
+      const el = stackRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 40 || rect.height < 40) return;
+      void fitDesktopWindow({
+        width: Math.ceil(rect.width),
+        height: Math.ceil(rect.height),
+        anchor: "center",
+      });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [gateRevision, showingGate, needAuth, auth.loading]);
 
   // Keep vault mode while any gate is up — no delay (delay let the first paint flash wrong chrome).
   useEffect(() => {
@@ -141,7 +182,7 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
   if (auth.loading) {
     return (
       <div className="zp-gate zp-gate--modal">
-        <div className="zp-gate-stack">
+        <div className="zp-gate-stack" ref={stackRef}>
           <GateDragBar label="ZeroPaste · starting…" drag={drag} />
           <div className="zp-gate-card zp-gate-card--loading">
             <div className="zp-gate-icon">
@@ -158,7 +199,7 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
   if (needAuth) {
     return (
       <div className="zp-gate zp-gate--modal">
-        <div className="zp-gate-stack">
+        <div className="zp-gate-stack" ref={stackRef}>
           <GateDragBar label="ZeroPaste · drag to move" drag={drag} />
           <div className="zp-gate-card zp-gate-card--auth">
             <div className="zp-gate-icon">
@@ -170,9 +211,13 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
               <span>Email</span>
               <input
                 type="email"
+                name="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 disabled={busy}
               />
             </label>
@@ -250,7 +295,7 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
   if (awaitingCloudVault) {
     return (
       <div className="zp-gate zp-gate--modal">
-        <div className="zp-gate-stack">
+        <div className="zp-gate-stack" ref={stackRef}>
           <GateDragBar label="ZeroPaste · starting…" drag={drag} />
           <div className="zp-gate-card zp-gate-card--loading">
             <div className="zp-gate-icon">
@@ -267,7 +312,7 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
   if (vault.unlocked && vault.recoveryKeyOnce) {
     return (
       <div className="zp-gate zp-gate--modal">
-        <div className="zp-gate-stack">
+        <div className="zp-gate-stack" ref={stackRef}>
           <GateDragBar label="Drag to move" drag={drag} />
           <div className="zp-gate-card">
             <div className="zp-gate-icon">
@@ -314,11 +359,11 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
       if (isSetup) {
         if (pass.length < 8) throw new Error("Use at least 8 characters");
         if (pass !== pass2) throw new Error("Passphrases do not match");
-        vault.setupVault(pass);
+        await vault.setupVault(pass);
       } else if (mode === "recovery") {
-        vault.unlockRecovery(pass);
+        await vault.unlockRecovery(pass);
       } else {
-        vault.unlock(pass);
+        await vault.unlock(pass);
       }
       setPass("");
       setPass2("");
@@ -331,7 +376,7 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="zp-gate zp-gate--modal">
-      <div className="zp-gate-stack">
+      <div className="zp-gate-stack" ref={stackRef}>
         <GateDragBar label="ZeroPaste · hold here and drag" drag={drag} />
         <div className="zp-gate-card">
           <div className="zp-gate-icon">

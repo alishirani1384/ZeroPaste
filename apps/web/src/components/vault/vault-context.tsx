@@ -29,9 +29,9 @@ type VaultContextValue = {
   unlocked: boolean;
   recoveryKeyOnce: string | null;
   clearRecoveryKeyOnce: () => void;
-  setupVault: (passphrase: string) => void;
-  unlock: (passphrase: string) => void;
-  unlockRecovery: (recoveryKey: string) => void;
+  setupVault: (passphrase: string) => Promise<void>;
+  unlock: (passphrase: string) => Promise<void>;
+  unlockRecovery: (recoveryKey: string) => Promise<void>;
   lock: () => void;
   /** Adopt vault meta restored from cloud (not yet unlocked). */
   adoptMeta: (meta: LocalVaultMeta) => void;
@@ -48,8 +48,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const [vaultKey, setVaultKey] = useState<Uint8Array | null>(() => loadUnlockSession());
   const [recoveryKeyOnce, setRecoveryKeyOnce] = useState<string | null>(null);
 
-  const setupVault = useCallback((passphrase: string) => {
-    const created = createLocalVault(passphrase);
+  const setupVault = useCallback(async (passphrase: string) => {
+    const created = await createLocalVault(passphrase);
     saveVaultMeta(created.meta);
     setMeta(created.meta);
     setVaultKey(created.vaultKey);
@@ -63,10 +63,10 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const unlock = useCallback(
-    (passphrase: string) => {
+    async (passphrase: string) => {
       const current = meta ?? loadVaultMeta();
       if (!current) throw new Error("No vault found");
-      const key = unlockWithPassphrase(current, passphrase);
+      const key = await unlockWithPassphrase(current, passphrase);
       setMeta(current);
       setVaultKey(key);
       rememberUnlocked(key);
@@ -75,10 +75,10 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   );
 
   const unlockRecovery = useCallback(
-    (recoveryKey: string) => {
+    async (recoveryKey: string) => {
       const current = meta ?? loadVaultMeta();
       if (!current) throw new Error("No vault found");
-      const key = unlockWithRecovery(current, recoveryKey);
+      const key = await unlockWithRecovery(current, recoveryKey);
       setMeta(current);
       setVaultKey(key);
       rememberUnlocked(key);

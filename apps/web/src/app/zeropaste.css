@@ -2,7 +2,7 @@
   --zp-crimson: oklch(0.62 0.19 32);
   --zp-crimson-soft: oklch(0.72 0.14 32);
   --zp-bg: oklch(0.97 0.005 260);
-  --zp-panel: oklch(0.995 0.002 260 / 0.94);
+  --zp-panel: oklch(0.995 0.002 260);
   --zp-surface: oklch(1 0 0);
   --zp-ink: oklch(0.22 0.02 260);
   --zp-muted: oklch(0.48 0.02 260);
@@ -30,15 +30,36 @@ body.dark,
   margin: 0 !important;
   padding: 0 !important;
   overflow: hidden !important;
-  width: 100% !important;
-  height: 100% !important;
-  /* Transparent CEF on Windows can stick on AppStarting; never inherit wait/progress. */
+  /* Intrinsic size — host HWND fits to children (no 100% feedback loop). */
+  width: max-content !important;
+  height: max-content !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
   cursor: default;
+}
+
+/*
+ * Landing route: override Electrobun max-content / transparent shell so the
+ * marketing page paints full-width white on first frame (before client JS).
+ */
+html:has([data-landing]),
+html:has([data-landing]).dark,
+body:has([data-landing]) {
+  width: 100% !important;
+  max-width: none !important;
+  height: auto !important;
+  min-width: 0 !important;
+  min-height: 100% !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color-scheme: light !important;
 }
 
 .dark {
   --zp-bg: transparent;
-  --zp-panel: oklch(0.22 0.015 260 / 0.96);
+  --zp-panel: oklch(0.22 0.015 260);
   --zp-surface: oklch(0.26 0.015 260);
   --zp-ink: oklch(0.96 0.005 260);
   --zp-muted: oklch(0.72 0.015 260);
@@ -51,46 +72,56 @@ body.dark,
 
 .zp-shell,
 .zp-shell--desktop {
-  width: 100%;
-  height: 100%;
+  width: max-content;
+  height: max-content;
   min-height: 0;
   background: transparent !important;
   font-family: var(--font-zp);
   color: var(--zp-ink);
-  overflow: hidden;
+  overflow: visible;
 }
 
 /*
- * Host window is a fixed ~1280×560 transparent surface (never resized on Win).
- * Panel: pin shelf to the bottom edge. Vault: center the gate card.
+ * Host HWND is fitted to the opaque UI. Pin content at 0,0 so any size mismatch
+ * does not leave a transparent click-blocking strip on the right/bottom.
  */
 .zp-shell--desktop {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: stretch;
+  display: block;
+  margin: 0;
+  padding: 0;
 }
 
 .zp-shell--desktop:has(.zp-gate) {
-  justify-content: center;
-  align-items: center;
+  display: block;
 }
 
 .zp-panel {
   display: grid;
   grid-template-rows: auto auto auto;
-  width: 100%;
+  width: 1100px;
   height: 320px;
-  max-height: 320px;
-  flex-shrink: 0;
+  margin: 0;
   box-sizing: border-box;
   background: var(--zp-panel);
-  backdrop-filter: blur(28px) saturate(1.2);
   border: 1px solid var(--zp-line);
   border-radius: 16px;
   box-shadow: 0 16px 48px var(--zp-shadow);
   position: relative;
   overflow: hidden;
+}
+
+/* While Quick Look is open, collapse the shelf so body max-content = QL sheet. */
+.zp-panel--ql-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
 }
 
 .zp-resize-hint {
@@ -114,7 +145,8 @@ body.dark,
 
 .zp-drag-strip:active,
 .zp-brand:active,
-.zp-gate-drag:active {
+.zp-gate-drag:active,
+.zp-gate-drag-hit:active {
   cursor: grabbing;
 }
 
@@ -514,20 +546,17 @@ body.dark,
   line-height: 1.45;
 }
 
-/* Vault: transparent window chrome; only the card is opaque */
+/* Vault: opaque stack at 0,0 — HWND fits this box exactly */
 .zp-gate {
-  width: 100%;
-  height: 100%;
+  width: max-content;
+  height: max-content;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: safe center;
-  padding: 12px 20px;
+  display: block;
+  margin: 0;
+  padding: 0;
   box-sizing: border-box;
   background: transparent !important;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .zp-gate--modal {
@@ -537,8 +566,9 @@ body.dark,
 }
 
 .zp-gate-stack {
-  width: min(420px, 100%);
+  width: 420px;
   max-width: 420px;
+  margin: 0;
   display: flex;
   flex-direction: column;
   border-radius: 20px;
@@ -572,14 +602,24 @@ body.dark,
   font-size: 12px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
   background: var(--zp-panel);
   border: 1px solid var(--zp-line);
   border-bottom: 0;
   border-radius: 20px 20px 0 0;
   padding: 0 40px;
+}
+
+.zp-gate-drag-hit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
 .zp-gate-close {
@@ -620,7 +660,6 @@ body.dark,
   border-top: 0;
   border-radius: 0 0 20px 20px;
   padding: 20px 24px 24px;
-  backdrop-filter: blur(28px) saturate(1.15);
   overflow: visible;
   box-sizing: border-box;
 }
@@ -830,31 +869,27 @@ body.dark,
   line-height: 1.4;
 }
 
-/* Quick Look — full Electrobun window (portaled to body), above the shelf */
+/* Quick Look — fixed to HWND origin; host fits to 920×520 */
 .zp-ql {
   position: fixed;
-  inset: 0;
+  left: 0;
+  top: 0;
   z-index: 200;
-  display: grid;
-  place-items: center;
-  padding: 28px 36px;
+  width: 920px;
+  height: 520px;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 .zp-ql-backdrop {
-  position: absolute;
-  inset: 0;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-  background: oklch(0.08 0.02 260 / 0.62);
-  backdrop-filter: blur(10px) saturate(1.1);
+  display: none;
 }
 
 .zp-ql-sheet {
   position: relative;
-  width: min(920px, 100%);
-  height: min(520px, calc(100% - 8px));
-  max-height: calc(100vh - 56px);
+  width: 920px;
+  height: 520px;
   display: grid;
   grid-template-rows: auto minmax(160px, 1fr) auto auto;
   background: var(--zp-panel);
@@ -862,6 +897,7 @@ body.dark,
   border-radius: 18px;
   box-shadow: 0 28px 80px oklch(0 0 0 / 0.45);
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .zp-ql-head {
@@ -1179,7 +1215,6 @@ body.dark,
   border: 1px solid var(--zp-line);
   background: var(--zp-panel);
   box-shadow: 0 16px 40px var(--zp-shadow);
-  backdrop-filter: blur(20px) saturate(1.15);
   color: var(--zp-ink);
   font-family: var(--font-zp);
 }
@@ -1280,7 +1315,6 @@ body.dark,
   border: 1px solid var(--zp-line);
   background: var(--zp-panel);
   box-shadow: 0 18px 48px var(--zp-shadow);
-  backdrop-filter: blur(22px) saturate(1.15);
   color: var(--zp-ink);
   font-family: var(--font-zp);
 }

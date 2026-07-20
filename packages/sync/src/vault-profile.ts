@@ -28,16 +28,16 @@ export type LocalVaultMeta = {
   createdAt: string;
 };
 
-export function createLocalVault(passphrase: string): {
+export async function createLocalVault(passphrase: string): Promise<{
   meta: LocalVaultMeta;
   vaultKey: Uint8Array;
   recoveryKey: string;
-} {
+}> {
   const salt = generateSalt();
   const vaultKey = generateVaultKey();
   const recoveryKey = generateRecoveryKey();
-  const passKey = deriveKeyFromPassphrase(passphrase, salt);
-  const recoveryDerived = deriveKeyFromRecovery(recoveryKey, salt);
+  const passKey = await deriveKeyFromPassphrase(passphrase, salt);
+  const recoveryDerived = await deriveKeyFromRecovery(recoveryKey, salt);
   const verify = encryptPayload(vaultKey, VERIFY_PLAINTEXT);
 
   return {
@@ -59,8 +59,11 @@ function assertVault(vaultKey: Uint8Array, verify: EncryptedEnvelope) {
   if (plain !== VERIFY_PLAINTEXT) throw new Error("Vault integrity check failed");
 }
 
-export function unlockWithPassphrase(meta: LocalVaultMeta, passphrase: string): Uint8Array {
-  const passKey = deriveKeyFromPassphrase(passphrase, fromB64(meta.saltB64));
+export async function unlockWithPassphrase(
+  meta: LocalVaultMeta,
+  passphrase: string,
+): Promise<Uint8Array> {
+  const passKey = await deriveKeyFromPassphrase(passphrase, fromB64(meta.saltB64));
   try {
     const vaultKey = unwrapKey(passKey, meta.passphraseWrap);
     assertVault(vaultKey, meta.verify);
@@ -70,8 +73,11 @@ export function unlockWithPassphrase(meta: LocalVaultMeta, passphrase: string): 
   }
 }
 
-export function unlockWithRecovery(meta: LocalVaultMeta, recoveryKeyHex: string): Uint8Array {
-  const recoveryDerived = deriveKeyFromRecovery(recoveryKeyHex, fromB64(meta.saltB64));
+export async function unlockWithRecovery(
+  meta: LocalVaultMeta,
+  recoveryKeyHex: string,
+): Promise<Uint8Array> {
+  const recoveryDerived = await deriveKeyFromRecovery(recoveryKeyHex, fromB64(meta.saltB64));
   try {
     const vaultKey = unwrapKey(recoveryDerived, meta.recoveryWrap);
     assertVault(vaultKey, meta.verify);

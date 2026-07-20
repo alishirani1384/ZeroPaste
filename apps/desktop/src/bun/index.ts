@@ -88,22 +88,22 @@ startClipboardPoller();
 
 const url = await getMainViewUrl();
 
-// Fixed size at create — never grow/shrink later (Electrobun Win transparent bug).
+// Create at MAX canvas (hit-test ceiling). /window-fit shrinks to the UI.
 const size = resolveWindowSize();
 const initial = { ...vaultFrame(), ...size };
-console.log("[ZeroPaste] initial frame (fixed size)", initial);
+console.log("[ZeroPaste] initial frame (create=max canvas)", initial);
 
 /**
  * transparent:true for Paste-like chrome.
- * activate:false + NonactivatingPanel: open without stealing focus (Electrobun docs).
- * Size is fixed for the process lifetime; mode switches only call setPosition.
+ * WebView2 cannot click-through; HWND is fitted to opaque UI.
+ * MUST create at max size — growing past create size leaves dead click zones (#410).
  */
 const win = new BrowserWindow({
   title: "ZeroPaste",
   url,
   titleBarStyle: "hidden",
   transparent: true,
-  passthrough: false,
+  passthrough: true,
   activate: false,
   frame: initial,
   styleMask: {
@@ -113,7 +113,6 @@ const win = new BrowserWindow({
     Miniaturizable: false,
     Borderless: true,
     FullSizeContentView: true,
-    // macOS panel behavior; ignored harmlessly elsewhere when unsupported.
     NonactivatingPanel: true,
   },
 });
@@ -134,14 +133,13 @@ setTimeout(() => resolveRootHwnd("ZeroPaste"), 200);
 setTimeout(() => resolveRootHwnd("ZeroPaste"), 1000);
 
 setTimeout(() => {
-  console.log("[ZeroPaste] settle place vault");
+  console.log("[ZeroPaste] settle vault (position only — size from /window-fit)");
   placeWindow("vault");
   try {
     win.setAlwaysOnTop(true);
   } catch {
     /* ignore */
   }
-  // Vault needs keyboard — allow activation.
   void clearNoActivateByTitle().then(() => {
     resolveRootHwnd("ZeroPaste");
     setDesiredCursor("arrow");
@@ -226,21 +224,53 @@ try {
 }
 
 function resolveTrayImage(): string {
-  const local = join(import.meta.dir, "..", "..", "assets", "tray.png");
-  try {
-    if (Bun.file(local).size >= 0) return local;
-  } catch {
-    /* packaged */
+  // Prefer packaged view asset (always copied by electrobun.config).
+  const candidates = [
+    process.platform === "win32"
+      ? join(import.meta.dir, "..", "views", "mainview", "tray.ico")
+      : "",
+    join(import.meta.dir, "..", "views", "mainview", "tray.png"),
+    join(import.meta.dir, "..", "..", "assets", "tray.ico"),
+    join(import.meta.dir, "..", "..", "assets", "tray.png"),
+  ].filter(Boolean);
+
+  for (const path of candidates) {
+    try {
+      if (Bun.file(path).size > 0) {
+        console.log("[ZeroPaste] tray image", path);
+        return path;
+      }
+    } catch {
+      /* try next */
+    }
   }
-  return "views://mainview/tray.png";
+
+  // Electrobun resolves views:// against the packaged Resources/app/views folder.
+  return process.platform === "win32"
+    ? "views://mainview/tray.ico"
+    : "views://mainview/tray.png";
+}
+
+function quitApp() {
+  console.log("[ZeroPaste] quitting from tray");
+  try {
+    Utils.quit();
+  } catch (err) {
+    console.warn("[ZeroPaste] Utils.quit failed", err);
+  }
+  // Ensure exit even if the native quit path is a no-op on this build.
+  setTimeout(() => process.exit(0), 50);
 }
 
 try {
+  const trayImage = resolveTrayImage();
   const tray = new Tray({
     title: "ZeroPaste",
-    image: resolveTrayImage(),
-    width: 16,
-    height: 16,
+    image: trayImage,
+    // macOS template masking blanks the icon on Windows notify / overflow flyout.
+    template: process.platform === "darwin",
+    width: process.platform === "win32" ? 32 : 16,
+    height: process.platform === "win32" ? 32 : 16,
   });
   tray.setMenu([
     { type: "normal", label: "Show ZeroPaste", action: "show" },
@@ -250,19 +280,39 @@ try {
     { type: "normal", label: "Quit", action: "quit" },
   ]);
   tray.on("tray-clicked", (event: unknown) => {
-    const action =
-      typeof event === "object" && event && "action" in event
-        ? String((event as { action?: string }).action ?? "")
-        : "";
-    if (action === "pause5") setPaused(5 * 60_000);
-    else if (action === "resume") setPaused(null);
-    else if (action === "quit") {
+    // Electrobun emits ElectrobunEvent { data: { action } }, not a bare { action }.
+    const payload =
+      event && typeof event === "object" && "data" in event
+        ? (event as { data?: { action?: string } }).data
+        : (event as { action?: string } | null);
+    const action = String(payload?.action ?? "").trim();
+    console.log("[ZeroPaste] tray action", action || "(click)");
+
+    if (action === "pause5") {
+      setPaused(5 * 60_000);
+      return;
+    }
+    if (action === "resume") {
+      setPaused(null);
+      return;
+    }
+    if (action === "quit") {
       try {
-        Utils.quit();
+        tray.remove();
       } catch {
-        process.exit(0);
+        /* ignore */
       }
-    } else togglePanel();
+      quitApp();
+      return;
+    }
+    if (action === "show") {
+      void showPanel();
+      return;
+    }
+    // Empty action = left-click on the tray icon.
+    if (action === "") {
+      togglePanel();
+    }
   });
 } catch (err) {
   console.warn("[ZeroPaste] Tray failed", err);

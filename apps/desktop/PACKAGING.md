@@ -33,6 +33,17 @@ That is expected for stock Electrobun (`electrobun build --env=stable`).
 For a classic **NSIS / MSI** installer, use a third-party packager such as  
 [electrobun-builder-for-windows](https://github.com/Catharacta/electrobun-builder) after the Electrobun build.
 
+## Dynamic window size (WebView2)
+
+WebView2 cannot click through transparent pixels. The host HWND is resized to the
+opaque UI via `POST /window-fit`.
+
+**Critical:** create the window at the **max** canvas (shelf + Quick Look). Growing
+past the create size leaves dead click zones ([electrobun#410](https://github.com/blackboardsh/electrobun/issues/410)).
+Vault/account steps shrink that HWND; the shelf grows back within the ceiling.
+
+Stay on `bundleCEF: false` + `defaultRenderer: "native"`.
+
 ## Icons
 
 Config (already set):
@@ -45,7 +56,13 @@ build.linux.icon = "assets/zeropaste.png"
 Electrobun itself often fails to embed icons (`rcedit` resolve bug [#429](https://github.com/blackboardsh/electrobun/issues/429)).  
 We run `scripts/brand-windows-icons.ts` on **postBuild** + **postPackage** to force-embed the logo.
 
-After rebuilding, taskbar / Setup / launcher should show the ZeroPaste icon instead of Bun.
+`assets/zeropaste.ico` must be a **multi-size** ICO (16–256). A single 48px frame looks fine in the tray overflow but pixelates on the taskbar (HiDPI upscale). Regenerate from the master PNG:
+
+```bash
+python apps/desktop/scripts/generate-icons.py
+```
+
+After rebuilding, taskbar / Setup / launcher should show a sharp ZeroPaste icon. If Windows still shows a blurry cached icon, restart the app (or sign out / restart Explorer once).
 
 ## Rebuild
 

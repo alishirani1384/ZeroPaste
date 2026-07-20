@@ -25,6 +25,8 @@
     "build": "turbo run build --filter='!desktop' && turbo run build -F desktop",
     "check-types": "turbo run check-types",
     "dev:native": "turbo run dev -F native",
+    "android:native": "turbo run android -F native",
+    "prebuild:native": "turbo run prebuild:android -F native",
     "dev:web": "turbo run dev -F web",
     "dev:desktop": "turbo run dev:hmr -F desktop",
     "build:desktop": "turbo run build:stable -F desktop",

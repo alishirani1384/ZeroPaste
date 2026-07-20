@@ -74,11 +74,11 @@ export function VaultGate({ children }: { children: React.ReactNode }) {
       if (isSetup) {
         if (pass.length < 8) throw new Error("Use at least 8 characters");
         if (pass !== pass2) throw new Error("Passphrases do not match");
-        vault.setupVault(pass);
+        await vault.setupVault(pass);
       } else if (mode === "recovery") {
-        vault.unlockRecovery(pass);
+        await vault.unlockRecovery(pass);
       } else {
-        vault.unlock(pass);
+        await vault.unlock(pass);
       }
       setPass("");
       setPass2("");

@@ -10,6 +10,7 @@ import {
   FALLBACK_STATE,
   createPinboard,
   deleteClip,
+  fitDesktopWindow,
   pasteClip,
   pauseCapture,
   pinClipToBoard,
@@ -21,6 +22,7 @@ import {
   updateClipBody,
   type BridgeState,
 } from "@/lib/bridge";
+import { useDesktopWindowFit } from "@/components/desktop-window-fit";
 import { useVault } from "@/components/vault/vault-context";
 
 import { ClipCard, ClipCardFace } from "./clip-card";
@@ -367,10 +369,21 @@ export function ClipboardPanel() {
     return () => window.clearTimeout(t);
   }, []);
 
+  // Fit HWND to the full shelf (1100×320). Create-at-max makes the whole width clickable.
+  useDesktopWindowFit(panelRef, "panel", !quickLook, quickLook ? "ql" : "shelf");
+
+  useEffect(() => {
+    if (quickLook) return;
+    const id = window.requestAnimationFrame(() => {
+      void fitDesktopWindow({ width: 1100, height: 320, anchor: "bottom-center" });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [quickLook]);
+
   return (
     <div
       ref={panelRef}
-      className="zp-panel"
+      className={quickLook ? "zp-panel zp-panel--ql-hidden" : "zp-panel"}
       onMouseDown={(e) => {
         const t = e.target;
         if (

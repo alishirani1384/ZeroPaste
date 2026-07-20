@@ -7,7 +7,7 @@ Open-source clipboard manager — Paste.app-style UI on Windows/Linux/Android, C
 | App | Path | Stack |
 |-----|------|--------|
 | Desktop | `apps/desktop` | Electrobun (Win/Linux) |
-| Native | `apps/native` | Expo / React Native (Android) |
+| Native | `apps/native` | Expo / React Native (Android native build) |
 | Web UI | `apps/web` | Next.js (desktop panel + later account) |
 
 ## Packages
@@ -22,10 +22,13 @@ Open-source clipboard manager — Paste.app-style UI on Windows/Linux/Android, C
 bun install
 bun run dev:web        # UI at http://localhost:3001
 bun run dev:desktop    # Electrobun + HMR (clipboard bridge on :47821)
-bun run dev:native     # Expo
+bun run dev:native     # Expo Metro
+bun run prebuild:native && bun run android:native  # Android APK install
 ```
 
 Desktop hotkey: **Ctrl+Shift+V**. Bridge API: `http://127.0.0.1:47821`.
+
+**Android:** [apps/native/README.md](./apps/native/README.md) — icon from `apps/web/public/favicon/`. Background clipboard watch uses a sticky notification (Account → Stay ready in background).
 
 **Linux:** see [apps/desktop/LINUX.md](./apps/desktop/LINUX.md) for X11 (`xdotool`, `xclip`) and Wayland (`wtype`/`ydotool`, `wl-copy`) paste tools. Electrobun needs GTK/WebKitGTK build deps on Ubuntu 22.04+.
 

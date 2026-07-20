@@ -3,9 +3,11 @@
 import type { ClipItem } from "@paste/clipboard-core";
 import { formatByteSize, formatRelativeTime } from "@paste/clipboard-core";
 import { X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { useDesktopWindowFit } from "@/components/desktop-window-fit";
+import { fitDesktopWindow } from "@/lib/window-fit";
 import { setDesktopKeyboardFocus } from "@/lib/bridge";
 
 type Props = {
@@ -23,9 +25,20 @@ export function QuickLook({ clip, onClose, onSave }: Props) {
   const [draft, setDraft] = useState(clip.body);
   const [saving, setSaving] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
   const dirty = editable && draft !== clip.body;
 
   useEffect(() => setMounted(true), []);
+  useDesktopWindowFit(sheetRef, "panel", mounted);
+
+  // Force fit as soon as the sheet mounts (ResizeObserver alone can lag).
+  useEffect(() => {
+    if (!mounted) return;
+    const id = window.requestAnimationFrame(() => {
+      void fitDesktopWindow({ width: 920, height: 520, anchor: "bottom-center" });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [mounted, clip.id]);
 
   useEffect(() => {
     setDraft(clip.body);
@@ -55,8 +68,7 @@ export function QuickLook({ clip, onClose, onSave }: Props) {
 
   if (!mounted) return null;
 
-  // Portal to body so the modal covers the full Electrobun window (1280×560),
-  // not only the 320px shelf strip.
+  // Portal to body; host HWND grows to this sheet via useDesktopWindowFit.
   return createPortal(
     <div className="zp-ql" role="dialog" aria-modal="true" aria-label="Quick Look">
       <button
@@ -68,7 +80,7 @@ export function QuickLook({ clip, onClose, onSave }: Props) {
           onClose();
         }}
       />
-      <div className="zp-ql-sheet">
+      <div className="zp-ql-sheet" ref={sheetRef}>
         <header className="zp-ql-head">
           <div className="min-w-0">
             <h2>{clip.title}</h2>

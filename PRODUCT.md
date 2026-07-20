@@ -4,7 +4,7 @@
 Cross-device clipboard manager: Paste.app visual UX on Windows/Linux/Android, CopyCat-style sync via Supabase, default-on E2E encryption.
 
 ## Platform
-adaptive (desktop Electrobun + Android Expo; web for account/marketing)
+adaptive
 
 ## Register
 product

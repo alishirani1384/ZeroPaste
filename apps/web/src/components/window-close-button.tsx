@@ -20,12 +20,17 @@ export function WindowCloseButton({
       className={className}
       title={title}
       aria-label={title}
+      data-no-drag
+      onPointerDown={(e) => {
+        e.stopPropagation();
+      }}
       onMouseDown={(e) => {
         e.stopPropagation();
         e.preventDefault();
       }}
       onClick={(e) => {
         e.stopPropagation();
+        e.preventDefault();
         void hideDesktopWindow();
       }}
     >

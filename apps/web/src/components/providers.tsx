@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { Toaster } from "@paste/ui/components/sonner";
 
 import { AuthProvider } from "@/lib/auth-session";
@@ -12,12 +13,15 @@ import { VaultProvider } from "./vault/vault-context";
 import { ThemeProvider } from "./theme-provider";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isLanding = pathname?.startsWith("/landing") ?? false;
+
   return (
     <ThemeProvider
       attribute="class"
-      defaultTheme="dark"
+      defaultTheme={isLanding ? "light" : "dark"}
       enableSystem={false}
-      forcedTheme="dark"
+      forcedTheme={isLanding ? "light" : "dark"}
       disableTransitionOnChange
     >
       <AuthProvider>
