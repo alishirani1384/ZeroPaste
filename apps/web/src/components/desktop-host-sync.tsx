@@ -20,7 +20,6 @@ export function DesktopHostSync() {
           return;
         }
         console.info("[ZeroPaste] host OK", data);
-        toast.message(`Host: ${data.hostBuild}`, { duration: 2500 });
       } catch {
         if (!cancelled) {
           console.warn("[ZeroPaste] bridge offline (browser-only preview)");

@@ -22,11 +22,20 @@ async function postDrag(phase: "start" | "stop") {
  */
 export function windowDragHandlers() {
   let dragging = false;
+  let pointerId: number | null = null;
+
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    pointerId = null;
+    void postDrag("stop");
+  };
 
   return {
     onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
       if (e.button !== 0) return;
       dragging = true;
+      pointerId = e.pointerId;
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
       } catch {
@@ -34,15 +43,11 @@ export function windowDragHandlers() {
       }
       void postDrag("start");
     },
-    onPointerUp: () => {
-      if (!dragging) return;
-      dragging = false;
-      void postDrag("stop");
+    onPointerUp: (e: ReactPointerEvent<HTMLElement>) => {
+      if (pointerId !== null && e.pointerId !== pointerId) return;
+      end();
     },
-    onPointerCancel: () => {
-      if (!dragging) return;
-      dragging = false;
-      void postDrag("stop");
-    },
+    onPointerCancel: end,
+    onLostPointerCapture: end,
   };
 }

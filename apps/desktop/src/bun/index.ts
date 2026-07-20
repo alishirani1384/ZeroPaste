@@ -5,14 +5,17 @@ import {
   Updater,
   Utils,
 } from "electrobun/bun";
+import { join } from "node:path";
 
 import { startBridgeServer } from "./bridge-server";
 import { startClipboardPoller } from "./clipboard-poller";
-import { captureFocusTarget } from "./focus-target";
+import { captureFocusTarget, captureFocusTargetIfExternal } from "./focus-target";
+import { registerKeyboardFocus } from "./keyboard-focus";
 import { applyNoActivateByTitle, clearNoActivateByTitle } from "./noactivate";
 import { registerPanelVisibility } from "./panel-visibility";
-import { logLinuxPasteEnvironment } from "./platform/session";
-import { setPaused } from "./store";
+import { commandExists, getDisplayServer, logLinuxPasteEnvironment } from "./platform/session";
+import { addHostWarning, hydrateStoreFromDisk, setPaused } from "./store";
+import { resolveRootHwnd, setDesiredCursor, startCursorEnforcer } from "./win32-cursor";
 import {
   HOST_BUILD,
   bindWindow,
@@ -24,7 +27,25 @@ import {
 } from "./window-layout";
 
 console.log(`\n========== ${HOST_BUILD} booting ==========\n`);
+await hydrateStoreFromDisk();
 void logLinuxPasteEnvironment();
+if (process.platform === "linux") {
+  void (async () => {
+    const server = getDisplayServer();
+    const hasX = await commandExists("xdotool");
+    const hasWay =
+      (await commandExists("wtype")) ||
+      (await commandExists("ydotool")) ||
+      (await commandExists("dotool"));
+    if (server === "wayland" && !hasWay && !hasX) {
+      addHostWarning(
+        "Paste injection unavailable — install wtype or ydotool (Wayland), or xdotool (X11).",
+      );
+    } else if (server === "x11" && !hasX) {
+      addHostWarning("Paste injection unavailable — install xdotool (sudo apt install xdotool).");
+    }
+  })();
+}
 
 const DEV_SERVER_PORT = 3001;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
@@ -106,6 +127,12 @@ try {
   console.warn("[ZeroPaste] setAlwaysOnTop failed", err);
 }
 
+// Transparent CEF uses OSR — OS cursor sticks on AppStarting without this.
+startCursorEnforcer("ZeroPaste");
+setDesiredCursor("arrow");
+setTimeout(() => resolveRootHwnd("ZeroPaste"), 200);
+setTimeout(() => resolveRootHwnd("ZeroPaste"), 1000);
+
 setTimeout(() => {
   console.log("[ZeroPaste] settle place vault");
   placeWindow("vault");
@@ -115,7 +142,10 @@ setTimeout(() => {
     /* ignore */
   }
   // Vault needs keyboard — allow activation.
-  void clearNoActivateByTitle();
+  void clearNoActivateByTitle().then(() => {
+    resolveRootHwnd("ZeroPaste");
+    setDesiredCursor("arrow");
+  });
 }, 300);
 
 let panelVisible = true;
@@ -144,6 +174,8 @@ async function showPanel() {
     win.show();
     win.activate();
   }
+  resolveRootHwnd("ZeroPaste");
+  setDesiredCursor("arrow");
   panelVisible = true;
 }
 
@@ -153,6 +185,30 @@ function hidePanel() {
 }
 
 registerPanelVisibility({ hide: hidePanel, show: () => void showPanel() });
+
+registerKeyboardFocus({
+  enable: async () => {
+    // Remember the caret app before we steal focus for typing.
+    await captureFocusTargetIfExternal();
+    await clearNoActivateByTitle();
+    try {
+      win.show();
+      win.activate();
+    } catch (err) {
+      console.warn("[ZeroPaste] keyboard focus activate failed", err);
+    }
+  },
+  disable: async () => {
+    // Always re-arm NOACTIVATE in panel mode so clicks don't keep stealing focus.
+    if (getWindowMode() !== "panel") return;
+    await applyNoActivateByTitle();
+    try {
+      win.showInactive();
+    } catch {
+      /* ignore */
+    }
+  },
+});
 
 function togglePanel() {
   if (panelVisible) hidePanel();
@@ -164,10 +220,28 @@ try {
   console.log("[ZeroPaste] hotkey Ctrl+Shift+V registered");
 } catch (err) {
   console.warn("[ZeroPaste] GlobalShortcut failed", err);
+  addHostWarning(
+    "Global hotkey Ctrl+Shift+V failed to register — it may be in use. Use the tray to show ZeroPaste.",
+  );
+}
+
+function resolveTrayImage(): string {
+  const local = join(import.meta.dir, "..", "..", "assets", "tray.png");
+  try {
+    if (Bun.file(local).size >= 0) return local;
+  } catch {
+    /* packaged */
+  }
+  return "views://mainview/tray.png";
 }
 
 try {
-  const tray = new Tray({ title: "ZeroPaste" });
+  const tray = new Tray({
+    title: "ZeroPaste",
+    image: resolveTrayImage(),
+    width: 16,
+    height: 16,
+  });
   tray.setMenu([
     { type: "normal", label: "Show ZeroPaste", action: "show" },
     { type: "normal", label: "Pause 5 minutes", action: "pause5" },
@@ -192,6 +266,7 @@ try {
   });
 } catch (err) {
   console.warn("[ZeroPaste] Tray failed", err);
+  addHostWarning("System tray failed — ZeroPaste may be hard to reopen if the hotkey is also blocked.");
 }
 
 console.log(`[ZeroPaste] ${HOST_BUILD} ready\n`);

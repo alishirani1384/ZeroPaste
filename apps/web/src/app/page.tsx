@@ -1,14 +1,14 @@
 "use client";
 
 import { ClipboardPanel } from "@/components/clipboard/clipboard-panel";
-import { VaultGate } from "@/components/vault/vault-gate";
+import { OnboardingGate } from "@/components/vault/onboarding-gate";
 
 export default function Home() {
   return (
     <main className="zp-shell zp-shell--desktop">
-      <VaultGate>
+      <OnboardingGate>
         <ClipboardPanel />
-      </VaultGate>
+      </OnboardingGate>
     </main>
   );
 }

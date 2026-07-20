@@ -64,51 +64,44 @@ async function run(cmd: string[], label: string): Promise<boolean> {
   }
 }
 
-async function sendCtrlVLinux(): Promise<void> {
+async function sendCtrlVLinux(): Promise<boolean> {
   const server = getDisplayServer();
 
-  // X11 — xdotool is the reliable path
   if (server !== "wayland" && (await commandExists("xdotool"))) {
-    if (await run(["xdotool", "key", "--clearmodifiers", "ctrl+v"], "xdotool")) return;
+    if (await run(["xdotool", "key", "--clearmodifiers", "ctrl+v"], "xdotool")) return true;
   }
 
-  // Wayland-friendly injectors
   if (await commandExists("wtype")) {
-    if (await run(["wtype", "-M", "ctrl", "v", "-m", "ctrl"], "wtype")) return;
+    if (await run(["wtype", "-M", "ctrl", "v", "-m", "ctrl"], "wtype")) return true;
   }
   if (await commandExists("ydotool")) {
-    // KEY_LEFTCTRL=29, KEY_V=47 — down/up pairs
-    if (await run(["ydotool", "key", "29:1", "47:1", "47:0", "29:0"], "ydotool")) return;
+    if (await run(["ydotool", "key", "29:1", "47:1", "47:0", "29:0"], "ydotool")) return true;
   }
   if (await commandExists("dotool")) {
-    if (
-      await run(
-        ["sh", "-c", "printf 'key ctrl+v\\n' | dotool"],
-        "dotool",
-      )
-    ) {
-      return;
-    }
+    if (await run(["sh", "-c", "printf 'key ctrl+v\\n' | dotool"], "dotool")) return true;
   }
 
-  // Last resort on Wayland sessions that still expose XWayland
   if (await commandExists("xdotool")) {
-    if (await run(["xdotool", "key", "--clearmodifiers", "ctrl+v"], "xdotool(xwayland)")) return;
+    if (await run(["xdotool", "key", "--clearmodifiers", "ctrl+v"], "xdotool(xwayland)")) {
+      return true;
+    }
   }
 
   console.warn(
     "[ZeroPaste] No paste injector available. X11: install xdotool. Wayland: install ydotool or wtype.",
   );
+  return false;
 }
 
-export async function sendCtrlV(): Promise<void> {
+/** Returns false when no injector could run (UI should toast). */
+export async function sendCtrlV(): Promise<boolean> {
   if (process.platform === "win32") {
     if (!sendCtrlVWin) sendCtrlVWin = initWinSend();
     if (sendCtrlVWin) {
       sendCtrlVWin();
-      return;
+      return true;
     }
-    await run(
+    return run(
       [
         "powershell",
         "-NoProfile",
@@ -118,13 +111,12 @@ export async function sendCtrlV(): Promise<void> {
       ],
       "SendKeys",
     );
-    return;
   }
 
   if (process.platform === "linux") {
-    await sendCtrlVLinux();
-    return;
+    return sendCtrlVLinux();
   }
 
   console.warn("[ZeroPaste] sendCtrlV not implemented on", process.platform);
+  return false;
 }

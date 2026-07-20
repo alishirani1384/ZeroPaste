@@ -6,6 +6,8 @@ import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { setDesktopKeyboardFocus } from "@/lib/bridge";
+
 type Props = {
   clip: ClipItem;
   onClose: () => void;
@@ -33,12 +35,13 @@ export function QuickLook({ clip, onClose, onSave }: Props) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
+        if (dirty && !window.confirm("Discard unsaved changes?")) return;
         onClose();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, dirty]);
 
   const save = async () => {
     if (!onSave || !dirty) return;
@@ -56,7 +59,15 @@ export function QuickLook({ clip, onClose, onSave }: Props) {
   // not only the 320px shelf strip.
   return createPortal(
     <div className="zp-ql" role="dialog" aria-modal="true" aria-label="Quick Look">
-      <button type="button" className="zp-ql-backdrop" aria-label="Close preview" onClick={onClose} />
+      <button
+        type="button"
+        className="zp-ql-backdrop"
+        aria-label="Close preview"
+        onClick={() => {
+          if (dirty && !window.confirm("Discard unsaved changes?")) return;
+          onClose();
+        }}
+      />
       <div className="zp-ql-sheet">
         <header className="zp-ql-head">
           <div className="min-w-0">
@@ -66,7 +77,15 @@ export function QuickLook({ clip, onClose, onSave }: Props) {
               {formatByteSize(clip.byteSize)}
             </p>
           </div>
-          <button type="button" className="zp-icon-btn" onClick={onClose} aria-label="Close">
+          <button
+            type="button"
+            className="zp-icon-btn"
+            onClick={() => {
+              if (dirty && !window.confirm("Discard unsaved changes?")) return;
+              onClose();
+            }}
+            aria-label="Close"
+          >
             <X className="size-4" />
           </button>
         </header>
@@ -86,6 +105,8 @@ export function QuickLook({ clip, onClose, onSave }: Props) {
               onChange={(e) => setDraft(e.target.value)}
               spellCheck={clip.kind !== "code"}
               aria-label="Edit clip"
+              onFocus={() => void setDesktopKeyboardFocus(true)}
+              onBlur={() => void setDesktopKeyboardFocus(false)}
             />
           ) : (
             <p className="zp-ql-text">{clip.body}</p>
@@ -94,9 +115,15 @@ export function QuickLook({ clip, onClose, onSave }: Props) {
 
         <dl className="zp-ql-meta">
           <div>
-            <dt>Source</dt>
+            <dt>App</dt>
             <dd>{clip.source.appName}</dd>
           </div>
+          {clip.source.windowTitle && clip.source.windowTitle !== clip.source.appName ? (
+            <div>
+              <dt>Window</dt>
+              <dd>{clip.source.windowTitle}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>Device</dt>
             <dd>

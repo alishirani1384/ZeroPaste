@@ -1,29 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Session } from "@supabase/supabase-js";
+import { upsertVaultMetaBlob } from "@paste/sync";
 
-import { getSupabaseBrowser, supabaseConfigured } from "@/lib/supabase";
+import { PasswordField } from "@/components/password-field";
 import { useVault } from "@/components/vault/vault-context";
-import { upsertVaultProfile } from "@paste/sync";
+import { getAutostartEnabled, setAutostartEnabled } from "@/lib/bridge";
+import { useAuth } from "@/lib/auth-session";
 
 export function AuthPanel() {
+  const auth = useAuth();
   const vault = useVault();
-  const [session, setSession] = useState<Session | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [autostart, setAutostart] = useState<boolean | null>(null);
+  const [autostartBusy, setAutostartBusy] = useState(false);
 
   useEffect(() => {
-    const client = getSupabaseBrowser();
-    if (!client) return;
-    void client.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: sub } = client.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => sub.subscription.unsubscribe();
+    let cancelled = false;
+    void getAutostartEnabled().then((enabled) => {
+      if (!cancelled) setAutostart(enabled);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  if (!supabaseConfigured()) {
+  if (!auth.configured) {
     return (
       <div className="zp-auth">
         <h2>Cloud sync</h2>
@@ -32,25 +37,44 @@ export function AuthPanel() {
           <code>apps/web/.env</code>, then apply <code>supabase/migrations</code>.
         </p>
         <p className="zp-auth-muted">Local E2E vault still protects clips on this device.</p>
+        {autostart !== null ? (
+          <label className="zp-auth-toggle">
+            <input
+              type="checkbox"
+              checked={autostart}
+              disabled={autostartBusy}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setAutostartBusy(true);
+                void setAutostartEnabled(next).then((ok) => {
+                  if (ok) setAutostart(next);
+                  setAutostartBusy(false);
+                });
+              }}
+            />
+            <span>Start ZeroPaste when this device boots</span>
+          </label>
+        ) : null}
       </div>
     );
   }
-
-  const client = getSupabaseBrowser()!;
 
   const signIn = async (mode: "signin" | "signup") => {
     setBusy(true);
     setMessage(null);
     try {
       if (mode === "signup") {
-        const { error } = await client.auth.signUp({ email, password });
-        if (error) throw error;
-        setMessage("Check your email to confirm, then sign in.");
+        const msg = await auth.signUp(email, password);
+        setMessage(msg);
       } else {
-        const { data, error } = await client.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        if (data.user && vault.meta) {
-          await upsertVaultProfile(client, data.user.id, vault.meta.saltB64);
+        await auth.signIn(email, password);
+        if (auth.client && vault.meta) {
+          const {
+            data: { session },
+          } = await auth.client.auth.getSession();
+          if (session) {
+            await upsertVaultMetaBlob(auth.client, session.user.id, vault.meta);
+          }
         }
         setMessage("Signed in — encrypted sync enabled.");
       }
@@ -63,35 +87,34 @@ export function AuthPanel() {
 
   return (
     <div className="zp-auth">
-      <h2>Cloud sync</h2>
-      {session ? (
+      <h2>Account & sync</h2>
+      {auth.session ? (
         <>
           <p>
-            Signed in as <strong>{session.user.email}</strong>. Clips sync as ciphertext only.
+            Signed in as <strong>{auth.session.user.email}</strong>. Clips, pinboards, and this
+            device sync to your account.
           </p>
-          <button
-            type="button"
-            className="zp-gate-primary"
-            onClick={() => void client.auth.signOut()}
-          >
+          <button type="button" className="zp-gate-primary" onClick={() => void auth.signOut()}>
             Sign out
           </button>
         </>
       ) : (
         <>
-          <p>Sign in to sync encrypted history across Windows, Linux, and Android.</p>
+          <p>
+            {auth.offlineChosen
+              ? "You are offline. Sign in to sync encrypted history across devices."
+              : "Sign in to sync encrypted history across Windows, Linux, and Android."}
+          </p>
           <label className="zp-gate-field">
             <span>Email</span>
             <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" />
           </label>
-          <label className="zp-gate-field">
-            <span>Password</span>
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              type="password"
-            />
-          </label>
+          <PasswordField
+            label="Password"
+            value={password}
+            onChange={setPassword}
+            autoComplete="current-password"
+          />
           <div className="zp-auth-actions">
             <button
               type="button"
@@ -112,6 +135,24 @@ export function AuthPanel() {
           </div>
         </>
       )}
+      {autostart !== null ? (
+        <label className="zp-auth-toggle">
+          <input
+            type="checkbox"
+            checked={autostart}
+            disabled={autostartBusy}
+            onChange={(e) => {
+              const next = e.target.checked;
+              setAutostartBusy(true);
+              void setAutostartEnabled(next).then((ok) => {
+                if (ok) setAutostart(next);
+                setAutostartBusy(false);
+              });
+            }}
+          />
+          <span>Start ZeroPaste when this device boots</span>
+        </label>
+      ) : null}
       {message ? <p className="zp-auth-muted">{message}</p> : null}
     </div>
   );

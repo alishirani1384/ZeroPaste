@@ -1,29 +1,35 @@
 import { captureFocusTargetIfExternal, restoreFocusTarget } from "./focus-target";
+import { disableKeyboardFocus, isKeyboardFocusActive } from "./keyboard-focus";
 import { getClipMedia } from "./media-store";
-import { isZeroPasteForeground } from "./noactivate";
 import { writeClipboardImage, writeClipboardText } from "./platform/clipboard-write";
 import { sendCtrlV } from "./send-paste";
 import { getState, noteClipboardFingerprint, suppressCapture } from "./store";
 
 /**
- * Paste like Win11 Clipboard / Ditto persistent mode (cross-platform):
- * 1) Keep shelf from activating (NOACTIVATE / showInactive)
- * 2) Put clip on the OS clipboard
- * 3) Ctrl+V into the caret app — soft-restore focus only if shelf stole it
+ * Paste fast path (Win11 Clipboard / Ditto style):
+ * - Normal click: clipboard write → Ctrl+V (no PowerShell focus dance)
+ * - Search/typing: exit typing, restore caret app, then Ctrl+V
  */
 export async function pasteClipById(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const clip = getState().clips.find((c) => c.id === id && !c.deletedAt);
   if (!clip) return { ok: false, error: "not_found" };
 
+  const wasTyping = isKeyboardFocusActive();
   suppressCapture(2500);
-  await captureFocusTargetIfExternal();
+
+  if (wasTyping) {
+    // Search stole OS focus — leave typing mode and put caret app back.
+    await disableKeyboardFocus();
+    await captureFocusTargetIfExternal();
+    await restoreFocusTarget();
+    await Bun.sleep(16);
+  }
 
   try {
     if (clip.kind === "image") {
       const media = getClipMedia(clip.id);
       if (!media) return { ok: false, error: "no_media" };
       noteClipboardFingerprint(["image"], null, media.paste.byteLength);
-      // Electrobun/Linux want PNG; Windows PowerShell accepts PNG or BMP.
       const pngMagic =
         media.display[0] === 0x89 && media.display[1] === 0x50
           ? media.display
@@ -48,18 +54,19 @@ export async function pasteClipById(id: string): Promise<{ ok: true } | { ok: fa
     return { ok: false, error: "clipboard_write_failed" };
   }
 
-  const shelfFocused = await isZeroPasteForeground();
-  if (shelfFocused) {
-    console.log("[ZeroPaste] shelf focused — soft restore caret app");
+  // Panel uses NOACTIVATE / showInactive — caret app should still be focused.
+  // Only re-check when we were typing (focus was stolen).
+  if (wasTyping) {
     await restoreFocusTarget();
-    await Bun.sleep(50);
-  } else {
-    console.log("[ZeroPaste] caret app still focused — Ctrl+V only");
+    await Bun.sleep(16);
   }
 
-  await sendCtrlV();
+  const injected = await sendCtrlV();
+  if (!injected) {
+    return { ok: false, error: "paste_inject_failed" };
+  }
   console.log("[ZeroPaste] pasted", id.slice(0, 8), clip.kind, {
-    shelfFocused,
+    wasTyping,
     platform: process.platform,
   });
   return { ok: true };

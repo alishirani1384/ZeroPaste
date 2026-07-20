@@ -8,7 +8,18 @@ export type { ClipRow } from "./types";
 export { encryptClip, decryptClip } from "./clip-crypto";
 
 export function createSupabase(url: string, anonKey: string): SupabaseClient {
-  return createClient(url, anonKey);
+  return createClient(url, anonKey, {
+    auth: {
+      // Keep the account signed in across launches; refresh tokens renew the session
+      // until revoked or the project’s refresh-token lifetime ends (configure in Supabase).
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storage: typeof globalThis !== "undefined" && "localStorage" in globalThis
+        ? globalThis.localStorage
+        : undefined,
+    },
+  });
 }
 
 export function isSupabaseConfigured(url?: string, anonKey?: string): boolean {
@@ -39,6 +50,27 @@ export async function pushClip(
   if (error) throw error;
 }
 
+/**
+ * Soft-delete a clip that already exists remotely. Returns true if a row was updated.
+ * Prefer this for deletes so we don't need local media to re-encrypt.
+ */
+export async function softDeleteRemoteClip(
+  client: SupabaseClient,
+  userId: string,
+  clipId: string,
+  deletedAt: string,
+  updatedAt: string,
+): Promise<boolean> {
+  const { data, error } = await client
+    .from("clips")
+    .update({ deleted_at: deletedAt, updated_at: updatedAt })
+    .eq("id", clipId)
+    .eq("user_id", userId)
+    .select("id");
+  if (error) throw error;
+  return (data?.length ?? 0) > 0;
+}
+
 export function subscribeClips(
   client: SupabaseClient,
   userId: string,
@@ -64,6 +96,22 @@ export {
   unlockWithRecovery,
   upsertVaultProfile,
   fetchVaultSalt,
+  upsertVaultMetaBlob,
+  fetchVaultMetaBlob,
   generateRecoveryKey,
   type LocalVaultMeta,
 } from "./vault-profile";
+export {
+  registerDevice,
+  loadLocalDeviceId,
+  saveLocalDeviceId,
+  detectDevicePlatform,
+  defaultDeviceName,
+  type DevicePlatform,
+} from "./device";
+export {
+  pushPinboard,
+  pullPinboards,
+  isSyncablePinboard,
+  type PinboardRow,
+} from "./pinboard-sync";

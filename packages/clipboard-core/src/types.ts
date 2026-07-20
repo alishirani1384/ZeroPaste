@@ -45,4 +45,6 @@ export type ClipFilter = {
   boardId?: string | "history";
   from?: string;
   to?: string;
+  /** Keep the input array order (shelf manual sort). Default sorts newest first. */
+  preserveOrder?: boolean;
 };

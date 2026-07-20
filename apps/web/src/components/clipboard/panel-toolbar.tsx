@@ -1,10 +1,24 @@
 "use client";
 
 import type { Pinboard } from "@paste/clipboard-core";
-import { GripHorizontal, Lock, Pause, Play, Plus, Search, Settings2 } from "lucide-react";
+import {
+  Cloud,
+  CloudOff,
+  GripHorizontal,
+  Loader2,
+  Lock,
+  Pause,
+  Play,
+  Plus,
+  Search,
+  User,
+} from "lucide-react";
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 
+import { WindowCloseButton } from "@/components/window-close-button";
+import { useSyncStatus } from "@/components/vault/sync-status";
+import { useAuth } from "@/lib/auth-session";
 import { windowDragHandlers } from "@/lib/window-drag";
 
 type Props = {
@@ -16,6 +30,9 @@ type Props = {
   onQueryChange: (q: string) => void;
   onTogglePause: () => void;
   onLock?: () => void;
+  onNewBoard?: (anchorRect: DOMRect) => void;
+  onSearchFocus?: () => void;
+  onSearchBlur?: () => void;
 };
 
 export function PanelToolbar({
@@ -27,8 +44,29 @@ export function PanelToolbar({
   onQueryChange,
   onTogglePause,
   onLock,
+  onNewBoard,
+  onSearchFocus,
+  onSearchBlur,
 }: Props) {
   const drag = useMemo(() => windowDragHandlers(), []);
+  const auth = useAuth();
+  const { phase, detail } = useSyncStatus();
+  const signedIn = Boolean(auth.session);
+  const offline = auth.offlineChosen || !auth.configured;
+  const pulling = phase === "pulling";
+  const cloudTitle = pulling
+    ? (detail ?? "Restoring from cloud…")
+    : phase === "error"
+      ? (detail ?? "Cloud sync error")
+      : phase === "synced"
+        ? (detail ?? "Cloud sync ready")
+        : signedIn
+          ? `Signed in as ${auth.session?.user.email ?? "account"}`
+          : offline
+            ? "Account — offline / sync off"
+            : "Sign in for cloud sync";
+  const addRef = useRef<HTMLButtonElement>(null);
+  const customBoards = boards.filter((b) => b.id !== "history");
 
   return (
     <header className="zp-toolbar">
@@ -49,7 +87,7 @@ export function PanelToolbar({
         >
           History
         </button>
-        {boards.map((b) => (
+        {customBoards.map((b) => (
           <button
             key={b.id}
             type="button"
@@ -60,8 +98,19 @@ export function PanelToolbar({
             {b.name}
           </button>
         ))}
-        <button type="button" className="zp-board zp-board--ghost" aria-label="New pinboard">
-          <Plus className="size-3.5" />
+        <button
+          ref={addRef}
+          type="button"
+          className="zp-board zp-board--add"
+          aria-label="New pinboard"
+          title="New pinboard"
+          onClick={() => {
+            const rect = addRef.current?.getBoundingClientRect();
+            if (rect) onNewBoard?.(rect);
+          }}
+        >
+          <Plus className="size-3.5" aria-hidden />
+          <span>New</span>
         </button>
       </nav>
 
@@ -73,8 +122,32 @@ export function PanelToolbar({
             onChange={(e) => onQueryChange(e.target.value)}
             placeholder="Search titles, content, apps…"
             spellCheck={false}
+            onMouseDown={(e) => {
+              // Clear NOACTIVATE before this click finishes so the input can type.
+              e.stopPropagation();
+              onSearchFocus?.();
+            }}
+            onFocus={() => onSearchFocus?.()}
+            onBlur={() => onSearchBlur?.()}
           />
         </label>
+        <Link
+          href="/account"
+          className="zp-icon-btn"
+          title={cloudTitle}
+          aria-label={pulling ? "Restoring from cloud" : "Account and sync"}
+        >
+          {pulling ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : signedIn ? (
+            <Cloud className={`size-4${phase === "error" ? " text-red-400" : ""}`} />
+          ) : (
+            <CloudOff className="size-4 opacity-70" />
+          )}
+        </Link>
+        <Link href="/account" className="zp-icon-btn" title="Account" aria-label="Account">
+          <User className="size-4" />
+        </Link>
         <button
           type="button"
           className="zp-icon-btn"
@@ -95,9 +168,7 @@ export function PanelToolbar({
             <Lock className="size-4" />
           </button>
         ) : null}
-        <Link href="/account" className="zp-icon-btn" title="Account & sync" aria-label="Account">
-          <Settings2 className="size-4" />
-        </Link>
+        <WindowCloseButton className="zp-icon-btn" title="Close" />
       </div>
     </header>
   );

@@ -5,7 +5,7 @@ import { applyNoActivateByTitle, clearNoActivateByTitle } from "./noactivate";
 export type WindowMode = "panel" | "vault";
 
 /** Bump when host logic changes — must appear in Electrobun terminal + /health. */
-export const HOST_BUILD = "zeropaste-host-2026-07-19-linux1";
+export const HOST_BUILD = "zeropaste-host-2026-07-20-webview2";
 
 /**
  * Electrobun Windows + transparent:true cannot reliably GROW the CEF/OSR
@@ -13,9 +13,10 @@ export const HOST_BUILD = "zeropaste-host-2026-07-19-linux1";
  * getFrame {1100,320} at (0,0) while the visible webview stayed ~vault-wide.
  *
  * Fix: create once at a fixed large size and ONLY setPosition when switching modes.
+ * Height must fit the tallest vault gate (sign-in + offline) without clipping.
  */
 const WIN_W = 1280;
-const WIN_H = 560;
+const WIN_H = 680;
 const PANEL_CONTENT_H = 320;
 const PANEL_MARGIN_BOTTOM = 28;
 
@@ -203,18 +204,25 @@ export function startWindowDrag(_screenX?: number, _screenY?: number) {
   console.log("[ZeroPaste] drag START", { pt, frame, dragOffset });
 
   if (dragTimer) clearInterval(dragTimer);
-  dragTimer = setInterval(() => {
-    if (!dragOffset || !winRef) return;
-    try {
-      const cur = Screen.getCursorScreenPoint();
-      winRef.setPosition(
-        Math.round(cur.x - dragOffset.dx),
-        Math.round(cur.y - dragOffset.dy),
-      );
-    } catch {
-      /* ignore */
-    }
-  }, 8);
+  // NOACTIVATE / showInactive often swallows pointerup — also stop when LMB is released.
+  void import("./platform/mouse").then(({ isLeftButtonDown }) => {
+    dragTimer = setInterval(() => {
+      if (!dragOffset || !winRef) return;
+      try {
+        if (!isLeftButtonDown()) {
+          stopWindowDrag();
+          return;
+        }
+        const cur = Screen.getCursorScreenPoint();
+        winRef.setPosition(
+          Math.round(cur.x - dragOffset.dx),
+          Math.round(cur.y - dragOffset.dy),
+        );
+      } catch {
+        /* ignore */
+      }
+    }, 8);
+  });
 }
 
 export function moveWindowDrag(_x: number, _y: number) {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { GripHorizontal, KeyRound, ShieldCheck } from "lucide-react";
 
+import { PasswordField } from "@/components/password-field";
 import { setDesktopWindowMode } from "@/lib/bridge";
 import { supabaseConfigured } from "@/lib/supabase";
 import { windowDragHandlers } from "@/lib/window-drag";
@@ -131,33 +132,28 @@ export function VaultGate({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
-          <label className="zp-gate-field">
-            <span>{isSetup || mode === "passphrase" ? "Vault passphrase" : "Recovery key"}</span>
-            <input
-              type={mode === "recovery" && !isSetup ? "text" : "password"}
-              autoComplete={isSetup ? "new-password" : "current-password"}
-              value={pass}
-              onChange={(e) => setPass(e.target.value)}
+          <PasswordField
+            label={isSetup || mode === "passphrase" ? "Vault passphrase" : "Recovery key"}
+            value={pass}
+            onChange={setPass}
+            autoComplete={isSetup ? "new-password" : "current-password"}
+            revealAlways={mode === "recovery" && !isSetup}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void submit();
+            }}
+          />
+
+          {isSetup ? (
+            <PasswordField
+              label="Confirm passphrase"
+              value={pass2}
+              onChange={setPass2}
+              autoComplete="new-password"
               onKeyDown={(e) => {
                 if (e.key === "Enter") void submit();
               }}
             />
-          </label>
-
-          {isSetup && (
-            <label className="zp-gate-field">
-              <span>Confirm passphrase</span>
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={pass2}
-                onChange={(e) => setPass2(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void submit();
-                }}
-              />
-            </label>
-          )}
+          ) : null}
 
           {error ? <p className="zp-gate-error">{error}</p> : null}
 

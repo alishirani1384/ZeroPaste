@@ -3,7 +3,7 @@
 import Link from "next/link";
 
 import { AuthPanel } from "@/components/vault/auth-panel";
-import { VaultGate } from "@/components/vault/vault-gate";
+import { OnboardingGate } from "@/components/vault/onboarding-gate";
 
 export default function AccountPage() {
   return (
@@ -12,11 +12,11 @@ export default function AccountPage() {
         <Link href="/" style={{ fontSize: 13, color: "var(--zp-muted)" }}>
           ← Back to clipboard
         </Link>
-        <VaultGate>
+        <OnboardingGate>
           <div style={{ marginTop: 20 }}>
             <AuthPanel />
           </div>
-        </VaultGate>
+        </OnboardingGate>
       </div>
     </main>
   );

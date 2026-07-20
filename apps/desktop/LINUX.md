@@ -42,6 +42,14 @@ bun run dev:desktop
 
 Confirm health: `curl http://127.0.0.1:47821/health` — `hostBuild` should include `linux`.
 
+## Autostart
+
+On first launch ZeroPaste writes `~/.config/autostart/zeropaste.desktop` so it starts at login. Toggle under Account → “Start ZeroPaste when this device boots”.
+
+## Icons
+
+Packaged builds use `apps/desktop/assets/zeropaste.png` (AppImage / `.desktop` icon). Source master: `apps/desktop/zeropaste.png`.
+
 ## Feature parity
 
 | Feature | Status |
@@ -51,4 +59,5 @@ Confirm health: `curl http://127.0.0.1:47821/health` — `hostBuild` should incl
 | Open without focus steal | `showInactive` + `activate: false` |
 | Click / drag paste | Ctrl+V via xdotool / ydotool / wtype |
 | Drag mouse watch | Electrobun `Screen.getMouseButtons` |
+| Login autostart | `~/.config/autostart/zeropaste.desktop` |
 | Win32 `WS_EX_NOACTIVATE` | Windows only (Linux uses showInactive) |

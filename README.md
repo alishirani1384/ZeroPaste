@@ -29,14 +29,18 @@ Desktop hotkey: **Ctrl+Shift+V**. Bridge API: `http://127.0.0.1:47821`.
 
 **Linux:** see [apps/desktop/LINUX.md](./apps/desktop/LINUX.md) for X11 (`xdotool`, `xclip`) and Wayland (`wtype`/`ydotool`, `wl-copy`) paste tools. Electrobun needs GTK/WebKitGTK build deps on Ubuntu 22.04+.
 
-### Vault (E2E)
+### Journey (desktop)
 
-On first launch, create a vault passphrase and save the recovery key. Unlock is required before the clipboard shelf. Lock from the toolbar. Account/sync UI: `/account`.
+1. **Account** — sign in / sign up, or Continue offline  
+2. **Vault** — create (new), unlock (local), or restore wraps from cloud then unlock  
+3. **Shelf** — history persists in `~/.zeropaste/`; cloud pull/push when signed in  
+
+Lock from the toolbar. Account/sync: cloud icon or `/account`.
 
 ## Supabase
 
-1. Create a free project and run `supabase/migrations/*.sql`
-2. Copy `apps/web/.env.example` → `apps/web/.env` with URL + anon key
-3. Sign in at `/account` — clips sync as ciphertext only
+1. Create a free project and run **all** `supabase/migrations/*.sql` (includes `vault_meta`)  
+2. Copy `apps/web/.env.example` → `apps/web/.env` with URL + anon key  
+3. Sign in during onboarding — vault wraps + clips sync as ciphertext only
 
 See [SECURITY.md](./SECURITY.md).

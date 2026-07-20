@@ -101,4 +101,38 @@ export async function fetchVaultSalt(client: SupabaseClient, userId: string): Pr
   return data?.vault_salt ?? null;
 }
 
+/** Upload full LocalVaultMeta so another device can unlock with the same passphrase. */
+export async function upsertVaultMetaBlob(
+  client: SupabaseClient,
+  userId: string,
+  meta: LocalVaultMeta,
+  displayName?: string,
+) {
+  const { error } = await client.from("profiles").upsert({
+    id: userId,
+    vault_salt: meta.saltB64,
+    vault_meta: meta,
+    display_name: displayName ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function fetchVaultMetaBlob(
+  client: SupabaseClient,
+  userId: string,
+): Promise<LocalVaultMeta | null> {
+  const { data, error } = await client
+    .from("profiles")
+    .select("vault_meta, vault_salt")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.vault_meta || typeof data.vault_meta !== "object") return null;
+  const meta = data.vault_meta as LocalVaultMeta;
+  if (!meta.passphraseWrap || !meta.recoveryWrap || !meta.verify || !meta.saltB64) {
+    return null;
+  }
+  return meta;
+}
+
 export { generateRecoveryKey };

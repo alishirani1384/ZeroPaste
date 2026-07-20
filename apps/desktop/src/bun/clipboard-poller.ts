@@ -3,6 +3,7 @@ import { Utils } from "electrobun/bun";
 
 import { normalizeClipboardImage } from "./image-format";
 import { mediaUrlFor, putClipMedia } from "./media-store";
+import { deviceLabel, getForegroundSource } from "./source-app";
 import {
   getState,
   isCaptureSuppressed,
@@ -21,7 +22,8 @@ function fingerprint(formats: string[], text: string | null, imageLen: number): 
 async function pollOnce() {
   const forced = takeExternalFingerprint();
   if (forced) lastFingerprint = forced;
-  if (isPaused() || isCaptureSuppressed()) return;
+  const st = getState();
+  if (!st.captureEnabled || isPaused() || isCaptureSuppressed()) return;
 
   try {
     const formats = Utils.clipboardAvailableFormats() ?? [];
@@ -38,21 +40,33 @@ async function pollOnce() {
       }
     }
 
-    // Prefer image when both present (Windows often exposes a text path too).
     if (!text && !imageBytes) return;
+
+    // Never store recovery-key shaped secrets (64 hex chars).
+    if (text && /^[0-9a-fA-F]{64}$/.test(text.trim())) {
+      console.warn("[ZeroPaste] skipped capture that looks like a recovery key");
+      lastFingerprint = fingerprint(formats, text, 0);
+      return;
+    }
 
     const fp = fingerprint(formats, text, imageBytes?.byteLength ?? 0);
     if (fp === lastFingerprint) return;
     lastFingerprint = fp;
 
+    const fg = await getForegroundSource();
+    const source = {
+      appName: fg.appName,
+      windowTitle: fg.windowTitle,
+      deviceName: deviceLabel(),
+      devicePlatform: (process.platform === "linux" ? "linux" : "windows") as
+        | "linux"
+        | "windows",
+    };
+
     if (imageBytes && imageBytes.byteLength > 0) {
       const normalized = normalizeClipboardImage(imageBytes);
-      const imgHash = await contentHash(
-        Buffer.from(normalized.bytes).toString("base64"),
-      );
-      const existing = getState().clips.find(
-        (c) => c.contentHash === imgHash && !c.deletedAt,
-      );
+      const imgHash = await contentHash(Buffer.from(normalized.bytes).toString("base64"));
+      const existing = getState().clips.find((c) => c.contentHash === imgHash && !c.deletedAt);
       const id = existing?.id ?? crypto.randomUUID();
       putClipMedia(id, normalized.bytes, normalized.mimeType, imageBytes);
       const url = mediaUrlFor(id);
@@ -63,33 +77,20 @@ async function pollOnce() {
         mimeType: normalized.mimeType,
         kind: "image",
         byteSize: normalized.bytes.byteLength,
-        source: {
-          appName: "System",
-          deviceName: "This PC",
-          devicePlatform: process.platform === "linux" ? "linux" : "windows",
-        },
+        source,
       });
       clip.byteSize = normalized.bytes.byteLength;
       clip.preview = url;
       clip.body = url;
       clip.contentHash = imgHash;
       upsertClip(clip);
-      console.log("[ZeroPaste] captured image", {
-        id: id.slice(0, 8),
-        bytes: normalized.bytes.byteLength,
-        mime: normalized.mimeType,
-      });
       return;
     }
 
     const clip = await createClipFromCapture({
       body: text ?? "",
       mimeType: "text/plain",
-      source: {
-        appName: "System",
-        deviceName: "This PC",
-        devicePlatform: process.platform === "linux" ? "linux" : "windows",
-      },
+      source,
     });
     upsertClip(clip);
   } catch (err) {

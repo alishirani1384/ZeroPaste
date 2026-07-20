@@ -3,9 +3,7 @@
 import type { ClipItem } from "@paste/clipboard-core";
 import { formatRelativeTime } from "@paste/clipboard-core";
 import { Code2, FileText, ImageIcon, Link2, Palette } from "lucide-react";
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-
-import { cancelDragPaste, dragPaste } from "@/lib/bridge";
+import { useState, type PointerEvent as ReactPointerEvent } from "react";
 
 const kindIcon = {
   text: FileText,
@@ -17,154 +15,24 @@ const kindIcon = {
   other: FileText,
 } as const;
 
-type Props = {
-  clip: ClipItem;
-  index: number;
-  selected: boolean;
-  compact: boolean;
-  onSelect: () => void;
-  onPaste: () => void;
-  onQuickLook: () => void;
-  /** True while this card (or any) is in host drag-paste. */
-  onDraggingChange: (dragging: boolean) => void;
-};
-
-const DRAG_THRESHOLD_SQ = 100;
-
-export function ClipCard({
+export function ClipCardFace({
   clip,
   index,
-  selected,
   compact,
-  onSelect,
-  onPaste,
-  onQuickLook,
-  onDraggingChange,
-}: Props) {
+  showIndex = true,
+}: {
+  clip: ClipItem;
+  index: number;
+  compact: boolean;
+  showIndex?: boolean;
+}) {
   const Icon = kindIcon[clip.kind];
-  const quick = index < 9 ? index + 1 : null;
+  const quick = showIndex && index < 9 ? index + 1 : null;
   const [imgFailed, setImgFailed] = useState(false);
-  const [dragging, setDragging] = useState(false);
   const imageSrc = clip.preview || clip.body;
-  const rootRef = useRef<HTMLDivElement>(null);
-  const lastClickRef = useRef(0);
-  const modeRef = useRef<"idle" | "pending" | "drag">("idle");
-  const downRef = useRef<{ x: number; y: number } | null>(null);
-  const dragSessionRef = useRef(0);
-
-  const endDrag = () => {
-    modeRef.current = "idle";
-    downRef.current = null;
-    setDragging(false);
-    onDraggingChange(false);
-  };
-
-  const beginHostDragPaste = () => {
-    const session = ++dragSessionRef.current;
-    onDraggingChange(true);
-    void dragPaste(clip.id).finally(() => {
-      if (dragSessionRef.current === session) endDrag();
-    });
-  };
-
-  useEffect(() => {
-    return () => {
-      if (modeRef.current === "drag") void cancelDragPaste();
-    };
-  }, []);
-
-  const onPointerDown = (e: ReactPointerEvent) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    modeRef.current = "pending";
-    downRef.current = { x: e.clientX, y: e.clientY };
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const onPointerMove = (e: ReactPointerEvent) => {
-    if (!downRef.current || modeRef.current === "idle") return;
-    const dx = e.clientX - downRef.current.x;
-    const dy = e.clientY - downRef.current.y;
-
-    if (modeRef.current === "pending" && dx * dx + dy * dy > DRAG_THRESHOLD_SQ) {
-      modeRef.current = "drag";
-      setDragging(true);
-      lastClickRef.current = 0;
-      onSelect();
-      // No free-floating ghost — CEF can't leave the window and it gets stuck.
-      // Host watches OS mouse-up and pastes on release (works over other apps).
-      beginHostDragPaste();
-    }
-  };
-
-  const onPointerUp = (e: ReactPointerEvent) => {
-    if (e.button !== 0) return;
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
-    }
-
-    if (modeRef.current === "drag") {
-      // Host pastes on OS button release; just drop local pending state.
-      // Don't endDrag here — wait for dragPaste() to finish so banner stays.
-      downRef.current = null;
-      return;
-    }
-
-    modeRef.current = "idle";
-    downRef.current = null;
-
-    const now = Date.now();
-    onSelect();
-
-    if (now - lastClickRef.current < 320) {
-      lastClickRef.current = 0;
-      onQuickLook();
-      return;
-    }
-
-    lastClickRef.current = now;
-    onPaste();
-  };
 
   return (
-    <div
-      ref={rootRef}
-      role="option"
-      tabIndex={-1}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={() => {
-        if (modeRef.current === "drag") void cancelDragPaste();
-        endDrag();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          onSelect();
-          onPaste();
-        }
-        if (e.key === " ") {
-          e.preventDefault();
-          onSelect();
-          onQuickLook();
-        }
-      }}
-      className={[
-        "zp-card group relative flex shrink-0 flex-col overflow-hidden text-left outline-none transition-[transform,box-shadow,background,opacity] duration-200 ease-out cursor-grab active:cursor-grabbing touch-none select-none",
-        compact ? "h-[148px] w-[132px]" : "h-[220px] w-[200px]",
-        selected ? "zp-card--selected" : "",
-        dragging ? "opacity-40 scale-[0.98]" : "",
-      ].join(" ")}
-      aria-selected={selected}
-      title="Click to paste · drag then release to paste · double-click Quick Look"
-    >
+    <>
       {quick !== null ? <span className="zp-quick" aria-hidden>{`#${quick}`}</span> : null}
 
       <div className={["zp-card-preview", compact ? "min-h-0 flex-1" : "h-[132px]"].join(" ")}>
@@ -217,6 +85,58 @@ export function ClipCard({
           <span className="shrink-0 tabular-nums">{formatRelativeTime(clip.createdAt)}</span>
         </div>
       </div>
+    </>
+  );
+}
+
+type Props = {
+  clip: ClipItem;
+  index: number;
+  selected: boolean;
+  compact: boolean;
+  sorting: boolean;
+  onPointerDown: (e: ReactPointerEvent, id: string, index: number) => void;
+  onSelect: () => void;
+  onContextMenu: (clientX: number, clientY: number) => void;
+};
+
+export function ClipCard({
+  clip,
+  index,
+  selected,
+  compact,
+  sorting,
+  onPointerDown,
+  onSelect,
+  onContextMenu,
+}: Props) {
+  return (
+    <div
+      data-clip-id={clip.id}
+      role="option"
+      tabIndex={-1}
+      onPointerDown={(e) => onPointerDown(e, clip.id, index)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onSelect();
+        onContextMenu(e.clientX, e.clientY);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={[
+        "zp-card group relative flex shrink-0 flex-col overflow-hidden text-left outline-none cursor-grab active:cursor-grabbing select-none touch-none",
+        compact ? "h-[148px] w-[132px]" : "h-[220px] w-[200px]",
+        selected && !sorting ? "zp-card--selected" : "",
+      ].join(" ")}
+      aria-selected={selected}
+      title="Click to paste · drag to reorder · right-click for more"
+    >
+      <ClipCardFace clip={clip} index={index} compact={compact} showIndex={!sorting} />
     </div>
   );
 }

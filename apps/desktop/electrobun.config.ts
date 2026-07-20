@@ -7,6 +7,7 @@ export default {
     name: "ZeroPaste",
     identifier: "app.zeropaste.desktop",
     version: "0.0.1",
+    description: "Encrypted clipboard manager for Windows and Linux",
   },
   runtime: {
     exitOnLastWindowClosed: false,
@@ -17,19 +18,28 @@ export default {
     },
     copy: {
       [webBuildDir]: "views/mainview",
+      "assets/tray.png": "views/mainview/tray.png",
+      "assets/zeropaste.png": "views/mainview/zeropaste.png",
     },
     watchIgnore: [`${webBuildDir}/**`],
     mac: {
-      bundleCEF: true,
-      defaultRenderer: "cef",
+      bundleCEF: false,
+      defaultRenderer: "native",
     },
     linux: {
-      bundleCEF: true,
-      defaultRenderer: "cef",
+      bundleCEF: false,
+      defaultRenderer: "native",
+      icon: "assets/zeropaste.png",
     },
     win: {
-      bundleCEF: true,
-      defaultRenderer: "cef",
+      bundleCEF: false,
+      defaultRenderer: "native",
+      icon: "assets/zeropaste.ico",
     },
+  },
+  // Electrobun's built-in rcedit resolve is broken (#429) — brand icons ourselves.
+  scripts: {
+    postBuild: "scripts/brand-windows-icons.ts",
+    postPackage: "scripts/brand-windows-icons.ts",
   },
 } satisfies ElectrobunConfig;

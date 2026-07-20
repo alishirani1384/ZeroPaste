@@ -1,14 +1,27 @@
-import { normalizeClipboardImage } from "./image-format";
-import { getClipMedia, putClipMedia } from "./media-store";
+import { ensureDefaultAutostart, isAutostartEnabled, setAutostartEnabled } from "./autostart";
 import { cancelDragPaste, runDragPaste } from "./drag-paste";
+import { normalizeClipboardImage } from "./image-format";
+import { disableKeyboardFocus, enableKeyboardFocus } from "./keyboard-focus";
+import { getClipMedia, putClipMedia } from "./media-store";
+import { hidePanel } from "./panel-visibility";
 import { pasteClipById } from "./paste";
+import { setDesiredCursor } from "./win32-cursor";
 import {
+  createPinboard,
   getState,
+  mergeClip,
+  pinClipToBoard,
   removeClip,
+  reorderClips,
+  replaceClipsFromCloud,
+  replacePinboardsFromCloud,
+  setCaptureEnabled,
   setCompact,
   setPaused,
   subscribe,
+  suppressCapture,
   updateClipBody,
+  type DesktopState,
 } from "./store";
 import {
   HOST_BUILD,
@@ -22,6 +35,10 @@ import {
 } from "./window-layout";
 
 const PORT = 47821;
+
+function statePayload(s: DesktopState = getState()) {
+  return { ...s, windowMode: getWindowMode(), hostBuild: HOST_BUILD };
+}
 
 export function startBridgeServer() {
   const server = Bun.serve({
@@ -51,10 +68,7 @@ export function startBridgeServer() {
       }
 
       if (url.pathname === "/state" && req.method === "GET") {
-        return Response.json(
-          { ...getState(), windowMode: getWindowMode(), hostBuild: HOST_BUILD },
-          { headers },
-        );
+        return Response.json(statePayload(), { headers });
       }
 
       if (url.pathname === "/window-mode" && req.method === "POST") {
@@ -67,13 +81,39 @@ export function startBridgeServer() {
         return Response.json({ error: "invalid_mode" }, { status: 400, headers });
       }
 
+      if (url.pathname === "/window-hide" && req.method === "POST") {
+        hidePanel();
+        return Response.json({ ok: true, hostBuild: HOST_BUILD }, { headers });
+      }
+
+      if (url.pathname === "/keyboard-focus" && req.method === "POST") {
+        const body = (await req.json()) as { enabled?: boolean };
+        if (body.enabled) await enableKeyboardFocus();
+        else await disableKeyboardFocus();
+        return Response.json({ ok: true, enabled: !!body.enabled, hostBuild: HOST_BUILD }, { headers });
+      }
+
+      if (url.pathname === "/cursor" && req.method === "POST") {
+        const body = (await req.json()) as { cursor?: string };
+        if (typeof body.cursor === "string") setDesiredCursor(body.cursor);
+        return Response.json({ ok: true }, { headers });
+      }
+
+      if (url.pathname === "/clips-reorder" && req.method === "POST") {
+        const body = (await req.json()) as { ids?: unknown };
+        if (!Array.isArray(body.ids) || !body.ids.every((id) => typeof id === "string")) {
+          return Response.json({ error: "invalid" }, { status: 400, headers });
+        }
+        reorderClips(body.ids as string[]);
+        return Response.json(statePayload(), { headers });
+      }
+
       if (url.pathname === "/window-fit" && req.method === "POST") {
         const body = (await req.json()) as {
           anchor?: string;
           width?: number;
           height?: number;
         };
-        console.log("[ZeroPaste] POST /window-fit", body);
         fitWindow({
           width: body.width ?? 1100,
           height: body.height ?? 320,
@@ -89,7 +129,6 @@ export function startBridgeServer() {
           screenY?: number;
         };
         if (body.phase === "start") {
-          // Host uses OS cursor — web coords are ignored (HiDPI mismatch).
           startWindowDrag(body.screenX, body.screenY);
           return Response.json({ ok: true }, { headers });
         }
@@ -112,10 +151,8 @@ export function startBridgeServer() {
             const send = (data: unknown) => {
               controller.enqueue(enc.encode(`data: ${JSON.stringify(data)}\n\n`));
             };
-            send({ ...getState(), windowMode: getWindowMode(), hostBuild: HOST_BUILD });
-            unsub = subscribe((s) =>
-              send({ ...s, windowMode: getWindowMode(), hostBuild: HOST_BUILD }),
-            );
+            send(statePayload());
+            unsub = subscribe((s) => send(statePayload(s)));
           },
           cancel() {
             unsub();
@@ -135,7 +172,6 @@ export function startBridgeServer() {
         const id = url.pathname.slice("/clip-media/".length);
         const media = getClipMedia(id);
         if (!media) return new Response("Not found", { status: 404, headers });
-        // Re-normalize legacy raw DIB blobs captured before image-format fix.
         const normalized = normalizeClipboardImage(media.display);
         if (
           normalized.mimeType !== media.displayMime ||
@@ -157,9 +193,9 @@ export function startBridgeServer() {
         if (!body.id || typeof body.body !== "string") {
           return Response.json({ error: "invalid" }, { status: 400, headers });
         }
-        const ok = updateClipBody(body.id, body.body);
+        const ok = await updateClipBody(body.id, body.body);
         if (!ok) return Response.json({ error: "not_editable" }, { status: 400, headers });
-        return Response.json(getState(), { headers });
+        return Response.json(statePayload(), { headers });
       }
 
       if (url.pathname === "/paste" && req.method === "POST") {
@@ -172,7 +208,6 @@ export function startBridgeServer() {
         return Response.json({ ok: true }, { headers });
       }
 
-      // Drag-to-paste: blocks until OS left button releases, then pastes.
       if (url.pathname === "/drag-paste" && req.method === "POST") {
         const body = (await req.json()) as { id?: string; action?: "start" | "cancel" };
         if (body.action === "cancel") {
@@ -193,25 +228,92 @@ export function startBridgeServer() {
       if (url.pathname === "/pause" && req.method === "POST") {
         const body = (await req.json()) as { durationMs?: number | null };
         setPaused(body.durationMs ?? null);
-        return Response.json(getState(), { headers });
+        return Response.json(statePayload(), { headers });
       }
 
       if (url.pathname === "/compact" && req.method === "POST") {
         const body = (await req.json()) as { compact: boolean };
         setCompact(!!body.compact);
-        return Response.json(getState(), { headers });
+        return Response.json(statePayload(), { headers });
       }
 
       if (url.pathname === "/delete" && req.method === "POST") {
         const body = (await req.json()) as { id: string };
         removeClip(body.id);
-        return Response.json(getState(), { headers });
+        return Response.json(statePayload(), { headers });
+      }
+
+      if (url.pathname === "/capture-enabled" && req.method === "POST") {
+        const body = (await req.json()) as { enabled?: boolean };
+        setCaptureEnabled(!!body.enabled);
+        return Response.json(statePayload(), { headers });
+      }
+
+      if (url.pathname === "/suppress-capture" && req.method === "POST") {
+        const body = (await req.json()) as { ms?: number };
+        suppressCapture(body.ms ?? 5000);
+        return Response.json({ ok: true }, { headers });
+      }
+
+      if (url.pathname === "/pinboard" && req.method === "POST") {
+        const body = (await req.json()) as { name?: string; color?: string };
+        const board = createPinboard(body.name ?? "Pinboard", body.color);
+        return Response.json({ ok: true, board, ...statePayload() }, { headers });
+      }
+
+      if (url.pathname === "/pin-clip" && req.method === "POST") {
+        const body = (await req.json()) as { clipId?: string; boardId?: string };
+        if (!body.clipId || !body.boardId) {
+          return Response.json({ error: "invalid" }, { status: 400, headers });
+        }
+        pinClipToBoard(body.clipId, body.boardId);
+        return Response.json(statePayload(), { headers });
+      }
+
+      if (url.pathname === "/clips-merge" && req.method === "POST") {
+        const body = (await req.json()) as { clips?: unknown };
+        if (!Array.isArray(body.clips)) {
+          return Response.json({ error: "invalid" }, { status: 400, headers });
+        }
+        replaceClipsFromCloud(body.clips as Parameters<typeof replaceClipsFromCloud>[0]);
+        return Response.json(statePayload(), { headers });
+      }
+
+      if (url.pathname === "/clip-upsert" && req.method === "POST") {
+        const body = (await req.json()) as { clip?: unknown };
+        if (!body.clip || typeof body.clip !== "object") {
+          return Response.json({ error: "invalid" }, { status: 400, headers });
+        }
+        mergeClip(body.clip as Parameters<typeof mergeClip>[0]);
+        return Response.json(statePayload(), { headers });
+      }
+
+      if (url.pathname === "/pinboards-merge" && req.method === "POST") {
+        const body = (await req.json()) as { pinboards?: unknown };
+        if (!Array.isArray(body.pinboards)) {
+          return Response.json({ error: "invalid" }, { status: 400, headers });
+        }
+        replacePinboardsFromCloud(body.pinboards as Parameters<typeof replacePinboardsFromCloud>[0]);
+        return Response.json(statePayload(), { headers });
+      }
+
+      if (url.pathname === "/autostart" && req.method === "GET") {
+        const enabled = await isAutostartEnabled();
+        return Response.json({ ok: true, enabled, platform: process.platform }, { headers });
+      }
+
+      if (url.pathname === "/autostart" && req.method === "POST") {
+        const body = (await req.json()) as { enabled?: boolean };
+        const ok = await setAutostartEnabled(Boolean(body.enabled));
+        const enabled = await isAutostartEnabled();
+        return Response.json({ ok, enabled }, { headers: { ...headers }, status: ok ? 200 : 500 });
       }
 
       return new Response("Not found", { status: 404, headers });
     },
   });
 
+  void ensureDefaultAutostart();
   console.log(`[ZeroPaste] bridge http://127.0.0.1:${PORT} (${HOST_BUILD})`);
   return server;
 }
