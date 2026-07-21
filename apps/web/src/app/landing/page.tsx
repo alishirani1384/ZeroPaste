@@ -1,11 +1,11 @@
 import {
   AudiencesSection,
+  DonationSection,
+  DonorsSection,
   FeaturesSection,
   HeroSection,
-  PricingSection,
   SiteFooter,
   SiteHeader,
-  TestimonialsSection,
 } from "@/components/landing";
 
 export default function LandingPage() {
@@ -16,8 +16,8 @@ export default function LandingPage() {
         <HeroSection />
         <FeaturesSection />
         <AudiencesSection />
-        <TestimonialsSection />
-        <PricingSection />
+        <DonorsSection />
+        <DonationSection />
       </main>
       <SiteFooter />
     </>

@@ -3,9 +3,9 @@ import type { Metadata } from "next";
 import { LandingThemeReset } from "@/components/landing/landing-theme-reset";
 
 export const metadata: Metadata = {
-  title: "Paste — Clipboard Manager for Mac, iPhone & iPad",
+  title: "ZeroPaste — Clipboard Manager for Mac, iPhone & iPad",
   description:
-    "Paste keeps everything you copy organized and searchable. Lightweight, intuitive, packed with smart features, and private by design.",
+    "ZeroPaste keeps everything you copy organized and searchable. Lightweight, intuitive, packed with smart features, and private by design.",
 };
 
 export default function LandingLayout({

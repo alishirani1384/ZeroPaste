@@ -28,7 +28,7 @@ export function SiteFooter() {
 
         <div className="flex min-w-0 flex-1 items-center justify-center gap-3 sm:gap-5">
           <a
-            href="#download"
+            href="/landing/download"
             className="relative shrink-0 text-[13px] font-medium tracking-[-0.2px] !text-white/70 no-underline transition-colors hover:!text-white after:absolute after:inset-x-0 after:-bottom-0.5 after:h-px after:origin-left after:scale-x-0 after:bg-white after:transition-transform after:duration-300 hover:after:scale-x-100"
           >
             Download

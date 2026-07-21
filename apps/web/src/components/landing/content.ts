@@ -1,7 +1,129 @@
 export const LANDING_NAV = {
   logo: { href: "/landing", label: "ZeroPaste" },
-  cta: { href: "#download", label: "Try for free" },
+  cta: { href: "/landing/download", label: "Try for free" },
 } as const;
+
+/** Update these when release / store listings go live. */
+export const DOWNLOAD_LINKS = {
+  githubReleases: "https://github.com/OWNER/REPO/releases/latest",
+  myket: "#",
+  bazaar: "#",
+} as const;
+
+export const DOWNLOAD_HERO = {
+  title: "Try ZeroPaste for free",
+  subtitle:
+    "Everything you copy is saved, searchable, and in sync on your Windows, Linux, and Android devices.",
+  image: {
+    src: "/landing/download-hero-cards.png",
+    alt: "ZeroPaste clipboard history cards with a Free Forever card in front",
+    width: 1920,
+    height: 840,
+  },
+  note: "Available for Windows, Linux, and Android.",
+} as const;
+
+export const DOWNLOAD_PLATFORMS = [
+  {
+    id: "windows",
+    label: "Windows",
+    description: "Windows 10 or later",
+    options: [
+      {
+        id: "github",
+        label: "GitHub Releases",
+        href: DOWNLOAD_LINKS.githubReleases,
+        primary: true,
+      },
+    ],
+  },
+  {
+    id: "linux",
+    label: "Linux",
+    description: "AppImage and packages",
+    options: [
+      {
+        id: "github",
+        label: "GitHub Releases",
+        href: DOWNLOAD_LINKS.githubReleases,
+        primary: true,
+      },
+    ],
+  },
+  {
+    id: "android",
+    label: "Android",
+    description: "Phone and tablet",
+    options: [
+      {
+        id: "github",
+        label: "GitHub Releases",
+        href: DOWNLOAD_LINKS.githubReleases,
+        primary: true,
+      },
+      {
+        id: "myket",
+        label: "Myket",
+        href: DOWNLOAD_LINKS.myket,
+        primary: false,
+      },
+      {
+        id: "bazaar",
+        label: "Café Bazaar",
+        href: DOWNLOAD_LINKS.bazaar,
+        primary: false,
+      },
+    ],
+  },
+] as const;
+
+export const DOWNLOAD_TRIAL = {
+  title: "How the free forever works",
+  subtitle: "Free Forever, every feature, all your devices.",
+  cards: [
+    {
+      id: "unlocked",
+      title: "Everything unlocked",
+      body: "Unlimited clipboard history, pinboards, search, and sync across your devices. The full ZeroPaste, not a demo.",
+      icon: "star" as const,
+    },
+    {
+      id: "decide",
+      title: "Try first, decide later",
+      body: "Use ZeroPaste for free forever. Donate only if you’d like to support us.",
+      icon: "calendar" as const,
+    },
+    {
+      id: "devices",
+      title: "Sync across all your devices",
+      body: "Start on one device and ZeroPaste unlocks on all the others, Windows, Linux, and Android devices included.",
+      icon: "devices" as const,
+    },
+  ],
+} as const;
+
+export const DOWNLOAD_FAQ = [
+  {
+    question: "Where can I download ZeroPaste?",
+    answer:
+      "Windows and Linux builds are on GitHub Releases. On Android you can install from GitHub Releases, Myket, or Café Bazaar — same app, your choice of store.",
+  },
+  {
+    question: "What’s the difference between GitHub and Iranian stores?",
+    answer:
+      "It’s the same ZeroPaste either way. GitHub Releases gives you the APK directly. Myket and Café Bazaar are convenient if you prefer installing through an Iranian store, with their update flow.",
+  },
+  {
+    question: "Do I need to pay or enter a credit card?",
+    answer:
+      "No. ZeroPaste is free forever. Download it and use every feature — no trial clock, no card required. Donations are optional if you want to support the project.",
+  },
+  {
+    question: "Which platforms are supported?",
+    answer:
+      "ZeroPaste runs on Windows, Linux, and Android. Clipboard history syncs across the devices you sign in on.",
+  },
+] as const;
 
 export const PRESS_LOGOS = [
   {
@@ -88,73 +210,74 @@ export const AUDIENCES = [
   },
 ] as const;
 
-export const TESTIMONIALS = [
+export const DONORS = [
   {
-    name: "Alexander Akers",
-    role: "Software Engineer",
-    company: "Apple",
-    quote:
-      "I get worried when I use a computer without @paste_app. What if there’s something important on the clipboard? It’s like how you can “hold” a piece in Tetris but you have to remember what it is.",
+    name: "Ali R.",
+    note: "Keep building — ZeroPaste saved me hours already.",
+    amount: "$25",
     avatar: "/landing/testimonial-1.webp",
   },
   {
-    name: "João Cunha",
-    role: "Product Manager",
-    company: "Nubank",
-    quote:
-      "Few things have had as much impact on my Mac workflow as @paste_app. It may look irrelevant, but think of how many times you copy/paste things over the course of a day — Paste makes this process a gazillion times better.",
+    name: "Sara M.",
+    note: "Happy to support open, private clipboard tools.",
+    amount: "$10",
     avatar: "/landing/testimonial-2.webp",
   },
   {
-    name: "Jonathan Z. White",
-    role: "Designer & Developer",
-    company: "Airbnb",
-    quote:
-      "I’ve been using an app called @paste_app and it’s almost hilarious how much of a work flow improvement it is.",
+    name: "Anonymous",
+    note: "Free forever is rare. Here’s a coffee.",
+    amount: "$5",
     avatar: "/landing/testimonial-3.webp",
   },
   {
-    name: "Chris Messina",
-    role: "Hashtag Inventor",
-    company: "",
-    quote:
-      "This is a must-have Mac app for me. I use it dozens if not hundreds of times a day. So useful!",
+    name: "Reza K.",
+    note: "Sync across Windows and Android just works.",
+    amount: "$50",
     avatar: "/landing/testimonial-4.webp",
   },
   {
-    name: "Kristen Wright",
-    role: "Marketing",
-    company: "Day One Journal",
-    quote:
-      "Finally bought @paste_app and I’m really digging it. Great for code snippets, hex colors & links you frequently use.",
+    name: "Neda P.",
+    note: "Donated so more people can find this.",
+    amount: "$15",
     avatar: "/landing/testimonial-5.webp",
   },
   {
-    name: "Diego Freniche Brito",
-    role: "Developer Advocate",
-    company: "MongoDB",
-    quote:
-      "Using a clipboard manager has become second nature for me (and a necessity as developer). Have tried a bunch. @paste_app is the best by far. Instabuy.",
+    name: "Dev from Tehran",
+    note: "Appreciate the Myket option and E2E sync.",
+    amount: "$20",
     avatar: "/landing/testimonial-6.webp",
   },
 ] as const;
 
-export const PRICING_PLANS = [
-  { id: "monthly", label: "Monthly", price: "$2.49", suffix: "/month", note: "", save: "" },
-  {
-    id: "annual",
-    label: "Annual",
-    price: "$2.49",
-    suffix: "/month",
-    note: "$29.99 billed annually",
-    save: "Save 37%",
+/** Update wallet addresses and contact when ready. */
+export const DONATION = {
+  title: ["Support ZeroPaste", "if you love it"] as const,
+  subtitle:
+    "ZeroPaste is free forever. Donations keep development going — send crypto, or just say hello.",
+  crypto: [
+    {
+      id: "btc",
+      label: "Bitcoin",
+      network: "BTC",
+      address: "bc1qxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    },
+    {
+      id: "eth",
+      label: "Ethereum",
+      network: "ERC-20",
+      address: "0x0000000000000000000000000000000000000000",
+    },
+    {
+      id: "usdt",
+      label: "USDT",
+      network: "TRC-20",
+      address: "TXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+    },
+  ],
+  contact: {
+    label: "Contact me",
+    description: "Prefer another way to donate, or just want to chat? Reach out.",
+    email: "hello@zeropaste.app",
+    x: "https://x.com/zeropaste",
   },
-  {
-    id: "lifetime",
-    label: "Lifetime",
-    price: "$69.99",
-    suffix: "",
-    note: "One-time purchase",
-    save: "",
-  },
-] as const;
+} as const;
