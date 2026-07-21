@@ -55,6 +55,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "d43a24b3-f6c4-4ec6-b34b-4d2c82cf0812"
+      }
+    },
+    "owner": "alishiranis-team"
   }
 }

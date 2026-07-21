@@ -44,6 +44,17 @@ bun run android:native
 1. Open **Account → Enable Usage Access** so local clips can show source app names  
 2. Sign in with the same account as desktop and unlock the vault  
 
+### GitHub Actions release (recommended)
+
+Builds a sideload APK on Ubuntu and attaches it to a [GitHub Release](https://github.com/alishirani1384/ZeroPaste/releases).
+
+1. Add Actions secrets: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` (optional: `EXPO_PUBLIC_SERVER_URL`)
+2. Trigger either:
+   - `git tag v1.0.0 && git push origin v1.0.0`
+   - or **Actions → Android Release → Run workflow**
+
+Workflow: `.github/workflows/android-release.yml`
+
 ### EAS (optional)
 
 ```bash
