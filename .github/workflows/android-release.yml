@@ -1,0 +1,154 @@
+# Build ZeroPaste Android APK on GitHub-hosted Ubuntu and attach it to a Release.
+#
+# Triggers:
+#   - Push a version tag:  git tag v1.0.0 && git push origin v1.0.0
+#   - Actions → "Android Release" → Run workflow
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   EXPO_PUBLIC_SUPABASE_URL
+#   EXPO_PUBLIC_SUPABASE_ANON_KEY
+# Optional:
+#   EXPO_PUBLIC_SERVER_URL
+#
+# APK is signed with the debug keystore (sideload / internal testing).
+# For Play Store, add a release keystore later.
+
+name: Android Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag name (e.g. v1.0.1). Empty → android-<run_number>"
+        required: false
+        type: string
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build & release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    env:
+      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+      EXPO_PUBLIC_SERVER_URL: ${{ secrets.EXPO_PUBLIC_SERVER_URL }}
+      # Modern phones; keeps CI faster than a 4-ABI universal APK
+      ORG_GRADLE_PROJECT_reactNativeArchitectures: arm64-v8a,armeabi-v7a
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.9"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;35.0.0" \
+            "ndk;27.1.12297006" \
+            "cmake;3.22.1"
+          yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Write apps/native/.env from secrets
+        working-directory: apps/native
+        run: |
+          if [ -z "$EXPO_PUBLIC_SUPABASE_URL" ] || [ -z "$EXPO_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "::error::Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY secrets"
+            exit 1
+          fi
+          {
+            echo "EXPO_PUBLIC_SUPABASE_URL=${EXPO_PUBLIC_SUPABASE_URL}"
+            echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=${EXPO_PUBLIC_SUPABASE_ANON_KEY}"
+            if [ -n "${EXPO_PUBLIC_SERVER_URL:-}" ]; then
+              echo "EXPO_PUBLIC_SERVER_URL=${EXPO_PUBLIC_SERVER_URL}"
+            fi
+          } > .env
+          echo "Wrote apps/native/.env"
+
+      - name: Expo prebuild (generate android/)
+        working-directory: apps/native
+        run: bunx expo prebuild --platform android --non-interactive
+
+      - name: Assemble release APK
+        working-directory: apps/native/android
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Locate APK
+        id: apk
+        run: |
+          APK=$(find apps/native/android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "::error::No APK found under release outputs"
+            find apps/native/android/app/build/outputs -type f || true
+            exit 1
+          fi
+          DEST="ZeroPaste-${{ github.ref_name }}-${{ github.run_number }}.apk"
+          # sanitize for workflow_dispatch without a tag
+          DEST=$(echo "$DEST" | tr '/' '-')
+          cp "$APK" "$DEST"
+          echo "path=$DEST" >> "$GITHUB_OUTPUT"
+          ls -lh "$DEST"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeropaste-android-apk
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+
+      - name: Resolve release tag
+        id: meta
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+          elif [ -n "${{ inputs.tag_name }}" ]; then
+            TAG="${{ inputs.tag_name }}"
+          else
+            TAG="android-${{ github.run_number }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Using release tag: $TAG"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ZeroPaste Android ${{ steps.meta.outputs.tag }}
+          files: ${{ steps.apk.outputs.path }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
