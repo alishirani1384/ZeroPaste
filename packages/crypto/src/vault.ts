@@ -1,7 +1,14 @@
 import { gcm } from "@noble/ciphers/aes.js";
 import { argon2id as argon2idNoble } from "@noble/hashes/argon2.js";
 import { bytesToHex, hexToBytes, randomBytes, utf8ToBytes } from "@noble/hashes/utils.js";
-import { argon2id as argon2idWasm } from "hash-wasm";
+
+/** Lazy-load hash-wasm — a static import can abort Hermes on startup (no WebAssembly). */
+async function argon2idWasm(
+  opts: Parameters<typeof import("hash-wasm").argon2id>[0],
+): Promise<Uint8Array | string> {
+  const { argon2id } = await import("hash-wasm");
+  return argon2id(opts);
+}
 
 /** Must stay identical across desktop + mobile so cloud vaults unlock everywhere. */
 export const ARGON2_OPTS = {
@@ -72,6 +79,13 @@ async function argon2idDerive(password: Uint8Array, salt: Uint8Array): Promise<U
     return argon2Override(password, salt);
   }
 
+  // Hermes has no reliable WebAssembly — never load hash-wasm on RN.
+  if (isReactNative()) {
+    throw new Error(
+      "Vault unlock needs a WebAssembly bridge. Wait for the app to finish loading, then try again.",
+    );
+  }
+
   try {
     const hash = await argon2idWasm({
       password,
@@ -84,12 +98,6 @@ async function argon2idDerive(password: Uint8Array, salt: Uint8Array): Promise<U
     });
     return hash instanceof Uint8Array ? hash : new Uint8Array(hash);
   } catch (err) {
-    if (isReactNative()) {
-      console.warn("[crypto] hash-wasm Argon2 failed on RN", err);
-      throw new Error(
-        "Vault unlock needs a WebAssembly bridge. Wait for the app to finish loading, then try again.",
-      );
-    }
     console.warn("[crypto] hash-wasm Argon2 failed, falling back to @noble", err);
     return argon2idNoble(password, salt, ARGON2_OPTS);
   }
