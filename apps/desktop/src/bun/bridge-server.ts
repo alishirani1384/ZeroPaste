@@ -6,6 +6,7 @@ import { getClipMedia, putClipMedia } from "./media-store";
 import { hidePanel } from "./panel-visibility";
 import { pasteClipById } from "./paste";
 import { setDesiredCursor } from "./win32-cursor";
+import { ensureWindowsDesktopIntegration } from "./windows-install";
 import {
   createPinboard,
   getState,
@@ -314,6 +315,7 @@ export function startBridgeServer() {
   });
 
   void ensureDefaultAutostart();
+  void ensureWindowsDesktopIntegration();
   console.log(`[ZeroPaste] bridge http://127.0.0.1:${PORT} (${HOST_BUILD})`);
   return server;
 }

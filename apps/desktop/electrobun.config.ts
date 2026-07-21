@@ -21,6 +21,7 @@ export default {
       "assets/tray.png": "views/mainview/tray.png",
       "assets/tray.ico": "views/mainview/tray.ico",
       "assets/zeropaste.png": "views/mainview/zeropaste.png",
+      "assets/zeropaste.ico": "views/mainview/zeropaste.ico",
     },
     watchIgnore: [`${webBuildDir}/**`],
     mac: {

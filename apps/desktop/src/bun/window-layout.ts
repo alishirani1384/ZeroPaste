@@ -7,7 +7,7 @@ export type WindowMode = "panel" | "vault";
 export type FitAnchor = "bottom-center" | "center";
 
 /** Bump when host logic changes — must appear in Electrobun terminal + /health. */
-export const HOST_BUILD = "zeropaste-host-2026-07-20-dynfit3";
+export const HOST_BUILD = "zeropaste-host-2026-07-21-silentstart";
 
 /**
  * WebView2 + transparent: hit-testing stays bound to the *create* size

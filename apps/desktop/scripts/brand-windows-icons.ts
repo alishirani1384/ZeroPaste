@@ -6,7 +6,7 @@
  * - postBuild  → brand launcher/bun inside the app bundle BEFORE tar.zst is created
  * - postPackage → brand ZeroPaste-Setup.exe after the extractor is written
  */
-import { existsSync, readdirSync, statSync, copyFileSync, unlinkSync } from "node:fs";
+import { existsSync, readdirSync, statSync, copyFileSync, unlinkSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
@@ -80,14 +80,37 @@ function brand(exePath: string, rcedit: string) {
   }
   try {
     execFileSync(rcedit, [target, "--set-icon", ico], { stdio: "pipe" });
+    // Console-subsystem EXEs open a PowerShell/cmd window on login — force GUI.
+    setWindowsGuiSubsystem(target);
     if (tempExe) {
       copyFileSync(tempExe, exePath);
       unlinkSync(tempExe);
+      setWindowsGuiSubsystem(exePath);
     }
     console.log(`[brand-icons] OK ${exePath}`);
   } catch (err) {
     if (tempExe && existsSync(tempExe)) unlinkSync(tempExe);
     console.warn(`[brand-icons] FAIL ${exePath}`, err);
+  }
+}
+
+/** IMAGE_SUBSYSTEM_WINDOWS_GUI = 2 — no console window when double-clicked / Run key. */
+function setWindowsGuiSubsystem(exePath: string) {
+  try {
+    const buf = Buffer.from(readFileSync(exePath));
+    if (buf.length < 0x40 || buf.readUInt16LE(0) !== 0x5a4d) return; // MZ
+    const pe = buf.readUInt32LE(0x3c);
+    if (pe + 24 + 70 > buf.length) return;
+    if (buf.toString("ascii", pe, pe + 4) !== "PE\0\0") return;
+    // OptionalHeader.Subsystem is at PE+24+68 for PE32 and PE32+
+    const subOff = pe + 24 + 68;
+    const prev = buf.readUInt16LE(subOff);
+    if (prev === 2) return; // already GUI
+    buf.writeUInt16LE(2, subOff);
+    writeFileSync(exePath, buf);
+    console.log(`[brand-icons] subsystem CONSOLE→GUI ${exePath} (was ${prev})`);
+  } catch (err) {
+    console.warn(`[brand-icons] subsystem patch failed ${exePath}`, err);
   }
 }
 

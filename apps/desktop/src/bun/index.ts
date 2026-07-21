@@ -9,6 +9,7 @@ import { join } from "node:path";
 
 import { startBridgeServer } from "./bridge-server";
 import { startClipboardPoller } from "./clipboard-poller";
+import { isAutostartLaunch } from "./autostart";
 import { captureFocusTarget, captureFocusTargetIfExternal } from "./focus-target";
 import { registerKeyboardFocus } from "./keyboard-focus";
 import { applyNoActivateByTitle, clearNoActivateByTitle } from "./noactivate";
@@ -27,6 +28,8 @@ import {
 } from "./window-layout";
 
 console.log(`\n========== ${HOST_BUILD} booting ==========\n`);
+const startHidden = isAutostartLaunch();
+if (startHidden) console.log("[ZeroPaste] autostart launch — tray only until hotkey");
 await hydrateStoreFromDisk();
 void logLinuxPasteEnvironment();
 if (process.platform === "linux") {
@@ -105,6 +108,7 @@ const win = new BrowserWindow({
   transparent: true,
   passthrough: true,
   activate: false,
+  hidden: startHidden,
   frame: initial,
   styleMask: {
     Titled: false,
@@ -132,6 +136,8 @@ setDesiredCursor("arrow");
 setTimeout(() => resolveRootHwnd("ZeroPaste"), 200);
 setTimeout(() => resolveRootHwnd("ZeroPaste"), 1000);
 
+let panelVisible = !startHidden;
+
 setTimeout(() => {
   console.log("[ZeroPaste] settle vault (position only — size from /window-fit)");
   placeWindow("vault");
@@ -140,13 +146,20 @@ setTimeout(() => {
   } catch {
     /* ignore */
   }
+  if (startHidden) {
+    try {
+      win.hide();
+    } catch {
+      /* ignore */
+    }
+    panelVisible = false;
+    console.log("[ZeroPaste] hidden to tray — Ctrl+Shift+V or tray icon to open");
+  }
   void clearNoActivateByTitle().then(() => {
     resolveRootHwnd("ZeroPaste");
     setDesiredCursor("arrow");
   });
 }, 300);
-
-let panelVisible = true;
 
 async function showPanel() {
   await captureFocusTarget();

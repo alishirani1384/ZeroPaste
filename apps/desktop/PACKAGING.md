@@ -33,6 +33,42 @@ That is expected for stock Electrobun (`electrobun build --env=stable`).
 For a classic **NSIS / MSI** installer, use a third-party packager such as  
 [electrobun-builder-for-windows](https://github.com/Catharacta/electrobun-builder) after the Electrobun build.
 
+## Desktop shortcut & uninstall (Windows)
+
+Electrobun’s stock `ZeroPaste-Setup.exe` is only an extractor. It does **not** create a
+desktop shortcut or an Apps & Features uninstall entry by itself.
+
+ZeroPaste does this on **first launch** of `launcher.exe`:
+
+| Item | Location |
+|---|---|
+| Desktop shortcut | `%USERPROFILE%\Desktop\ZeroPaste.lnk` |
+| Start Menu | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\ZeroPaste.lnk` |
+| Uninstall entry | Settings → Apps → Installed apps → **ZeroPaste** |
+| Uninstall script | `%USERPROFILE%\.zeropaste\uninstall.ps1` |
+| Login autostart | hidden `wscript` → launcher `--autostart` (no PowerShell window) |
+
+### How to uninstall fully
+
+1. **Recommended:** Settings → Apps → Installed apps → ZeroPaste → Uninstall  
+2. **Or run:**
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.zeropaste\uninstall.ps1"
+   ```
+
+That removes:
+
+- Running ZeroPaste processes  
+- Login autostart (Run key)  
+- Desktop + Start Menu shortcuts  
+- Install folder under `%LOCALAPPDATA%\app.zeropaste.desktop\`  
+- User data in `%USERPROFILE%\.zeropaste\` (vault meta / local clips)  
+- The Apps & Features uninstall entry  
+
+### Want a classic NSIS wizard (shortcuts at install time)?
+
+Use [electrobun-builder-for-windows](https://github.com/Catharacta/electrobun-builder) after `electrobun build --env=stable` to produce NSIS/MSI with built-in shortcut + uninstall UI.
+
 ## Dynamic window size (WebView2)
 
 WebView2 cannot click through transparent pixels. The host HWND is resized to the

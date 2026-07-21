@@ -1,11 +1,19 @@
 /**
  * Register ZeroPaste to launch when the user logs into Windows / Linux.
+ *
+ * Windows: never put launcher.exe directly in the Run key — Electrobun's
+ * launcher/bun are console-subsystem binaries and open a PowerShell/console
+ * window on login. We register a tiny VBScript that starts the app hidden
+ * with --autostart (tray + hotkey only until the user opens it).
  */
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 const RUN_VALUE = "ZeroPaste";
 const PREF_PATH = () => join(homedir(), ".zeropaste", "autostart.json");
+const VBS_PATH = () => join(homedir(), ".zeropaste", "autostart.vbs");
+
+export const AUTOSTART_FLAG = "--autostart";
 
 type Pref = { enabled: boolean };
 
@@ -32,7 +40,7 @@ async function writePref(enabled: boolean) {
 
 function fileExists(path: string): boolean {
   try {
-    return Bun.file(path).size >= 0;
+    return Bun.file(path).size > 0;
   } catch {
     return false;
   }
@@ -52,7 +60,7 @@ export function resolveLaunchPath(): string {
     ];
     for (const c of candidates) {
       try {
-        if (Bun.file(c).size >= 0) return c;
+        if (Bun.file(c).size > 0) return c;
       } catch {
         /* continue */
       }
@@ -61,8 +69,40 @@ export function resolveLaunchPath(): string {
   return exe;
 }
 
+/** True when launched from login autostart (tray-only until hotkey). */
+export function isAutostartLaunch(): boolean {
+  if (process.env.ZEROPASTE_AUTOSTART === "1") return true;
+  return process.argv.includes(AUTOSTART_FLAG);
+}
+
+function escapeVbsString(path: string): string {
+  return path.replace(/"/g, '""');
+}
+
+async function writeWindowsAutostartVbs(launchPath: string): Promise<string> {
+  const dir = join(homedir(), ".zeropaste");
+  try {
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(dir, { recursive: true });
+  } catch {
+    /* ignore */
+  }
+  const vbsPath = VBS_PATH();
+  // WindowStyle 0 = hidden — no console flash on login.
+  const vbs = [
+    "' ZeroPaste login autostart — do not run interactively",
+    `Dim shell: Set shell = CreateObject("WScript.Shell")`,
+    `shell.Run """${escapeVbsString(launchPath)}"" ${AUTOSTART_FLAG}", 0, False`,
+    "",
+  ].join("\r\n");
+  await Bun.write(vbsPath, vbs);
+  return vbsPath;
+}
+
 async function enableWindows(launchPath: string): Promise<void> {
-  const value = `"${launchPath}"`;
+  const vbsPath = await writeWindowsAutostartVbs(launchPath);
+  // Prefer wscript so no console is allocated for the wrapper itself.
+  const value = `wscript.exe //B //Nologo "${vbsPath}"`;
   const proc = Bun.spawn(
     [
       "reg",
@@ -98,6 +138,15 @@ async function disableWindows(): Promise<void> {
     { stdout: "ignore", stderr: "ignore" },
   );
   await proc.exited; // ok if missing
+  try {
+    const path = VBS_PATH();
+    if (await Bun.file(path).exists()) {
+      const { unlinkSync } = await import("node:fs");
+      unlinkSync(path);
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 async function isEnabledWindows(): Promise<boolean> {
@@ -133,7 +182,7 @@ Type=Application
 Version=1.0
 Name=ZeroPaste
 Comment=ZeroPaste clipboard manager
-Exec="${launchPath.replace(/"/g, '\\"')}"
+Exec="${launchPath.replace(/"/g, '\\"')}" ${AUTOSTART_FLAG}
 Icon=${icon}
 Terminal=false
 Categories=Utility;
@@ -191,7 +240,8 @@ export async function setAutostartEnabled(enabled: boolean): Promise<boolean> {
 export async function ensureDefaultAutostart(): Promise<void> {
   if (process.platform !== "win32" && process.platform !== "linux") return;
   const pref = await readPref();
-  if (pref) return; // user already chose
+  if (pref?.enabled === false) return;
+  // Always refresh the Run entry so older console launches get rewritten to VBS.
   const ok = await setAutostartEnabled(true);
   if (!ok) console.warn("[ZeroPaste] could not enable default autostart");
 }
