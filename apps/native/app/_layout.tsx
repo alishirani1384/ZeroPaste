@@ -16,7 +16,6 @@ import { VaultProvider } from "@/contexts/vault-context";
 export const unstable_settings = {
   initialRouteName: "index",
 };
-
 function RootStack() {
   const { isDark } = useAppTheme();
   return (
