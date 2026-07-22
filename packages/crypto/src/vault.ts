@@ -3,11 +3,14 @@ import { argon2id as argon2idNoble } from "@noble/hashes/argon2.js";
 import { bytesToHex, hexToBytes, randomBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 
 /** Lazy-load hash-wasm — a static import can abort Hermes on startup (no WebAssembly). */
-async function argon2idWasm(
-  opts: Parameters<typeof import("hash-wasm").argon2id>[0],
-): Promise<Uint8Array | string> {
+async function argon2idWasmBinary(
+  opts: Omit<Parameters<typeof import("hash-wasm").argon2id>[0], "outputType">,
+): Promise<Uint8Array> {
   const { argon2id } = await import("hash-wasm");
-  return argon2id(opts);
+  const hash = await argon2id({ ...opts, outputType: "binary" });
+  // hash-wasm types widen to Uint8Array | string; binary always yields bytes.
+  if (hash instanceof Uint8Array) return hash;
+  return new Uint8Array(hash as unknown as ArrayLike<number>);
 }
 
 /** Must stay identical across desktop + mobile so cloud vaults unlock everywhere. */
@@ -87,16 +90,14 @@ async function argon2idDerive(password: Uint8Array, salt: Uint8Array): Promise<U
   }
 
   try {
-    const hash = await argon2idWasm({
+    return await argon2idWasmBinary({
       password,
       salt,
       parallelism: ARGON2_OPTS.p,
       iterations: ARGON2_OPTS.t,
       memorySize: ARGON2_OPTS.m,
       hashLength: ARGON2_OPTS.dkLen,
-      outputType: "binary",
     });
-    return hash instanceof Uint8Array ? hash : new Uint8Array(hash);
   } catch (err) {
     console.warn("[crypto] hash-wasm Argon2 failed, falling back to @noble", err);
     return argon2idNoble(password, salt, ARGON2_OPTS);

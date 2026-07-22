@@ -14,7 +14,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: "ZeroPaste",
   slug: "zeropaste",
-  version: "1.0.5",
+  version: "1.0.7",
   orientation: "portrait",
   scheme: "zeropaste",
   userInterfaceStyle: "automatic",
@@ -32,7 +32,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     package: "app.zeropaste.mobile",
-    versionCode: 5,
+    versionCode: 7,
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
       backgroundColor: "#1C1C1E",

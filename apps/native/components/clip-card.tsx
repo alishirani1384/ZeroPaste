@@ -1,10 +1,17 @@
 import type { ClipItem } from "@paste/clipboard-core";
+import { contrastingInk, paintColorForNative } from "@paste/clipboard-core";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { CodeHighlight, detectCodeLanguage } from "@/components/code-highlight";
 import { KindTypeIcon } from "@/components/kind-type-icon";
+import {
+  clipCloudBadgeFor,
+  useSyncStatus,
+  type ClipCloudBadge,
+} from "@/contexts/sync-status";
 import {
   characterCountLabel,
   imageSizeLabel,
@@ -24,6 +31,8 @@ type Props = {
 export function ClipCard({ clip, onPress, onLongPress }: Props) {
   const chrome = kindChrome(clip.kind);
   const when = pasteRelativeTime(clip.createdAt);
+  const { phase, clipBadge } = useSyncStatus();
+  const badge = clipCloudBadgeFor(clipBadge, clip.id, phase);
 
   return (
     <Pressable
@@ -36,7 +45,10 @@ export function ClipCard({ clip, onPress, onLongPress }: Props) {
         onLongPress();
       }}
       delayLongPress={280}
-      style={({ pressed }) => [styles.card, { opacity: pressed ? 0.94 : 1, transform: [{ scale: pressed ? 0.985 : 1 }] }]}
+      style={({ pressed }) => [
+        styles.card,
+        { opacity: pressed ? 0.94 : 1, transform: [{ scale: pressed ? 0.985 : 1 }] },
+      ]}
     >
       <View style={[styles.header, { backgroundColor: chrome.header }]}>
         <View style={styles.headerText}>
@@ -48,13 +60,39 @@ export function ClipCard({ clip, onPress, onLongPress }: Props) {
         </View>
       </View>
 
-      {clip.kind === "link" ? <LinkBody clip={clip} /> : null}
-      {clip.kind === "text" || clip.kind === "other" ? <TextBody clip={clip} /> : null}
-      {clip.kind === "image" ? <ImageBody clip={clip} /> : null}
-      {clip.kind === "code" ? <CodeBody clip={clip} /> : null}
-      {clip.kind === "color" ? <ColorBody clip={clip} /> : null}
-      {clip.kind === "file" ? <FileBody clip={clip} /> : null}
+      <View style={styles.bodyWrap}>
+        {clip.kind === "link" ? <LinkBody clip={clip} /> : null}
+        {clip.kind === "text" || clip.kind === "other" ? <TextBody clip={clip} /> : null}
+        {clip.kind === "image" ? <ImageBody clip={clip} /> : null}
+        {clip.kind === "code" ? <CodeBody clip={clip} /> : null}
+        {clip.kind === "color" ? <ColorBody clip={clip} /> : null}
+        {clip.kind === "file" ? <FileBody clip={clip} /> : null}
+        <CloudBadge badge={badge} onDark={clip.kind === "image" || clip.kind === "code" || clip.kind === "color"} />
+      </View>
     </Pressable>
+  );
+}
+
+function CloudBadge({ badge, onDark }: { badge: ClipCloudBadge; onDark?: boolean }) {
+  const synced = badge === "synced";
+  const localOnly = badge === "local_only";
+  return (
+    <View
+      style={[
+        styles.cloudBadge,
+        onDark ? styles.cloudBadgeOnDark : styles.cloudBadgeOnLight,
+      ]}
+      pointerEvents="none"
+      accessibilityLabel={
+        synced ? "Synced to cloud" : localOnly ? "Kept on device only" : "Not synced to cloud"
+      }
+    >
+      <Ionicons
+        name={synced ? "cloud" : localOnly ? "phone-portrait-outline" : "cloud-offline"}
+        size={14}
+        color={synced ? "#34C759" : localOnly ? "#FF9F0A" : onDark ? "rgba(255,255,255,0.7)" : "#8E8E93"}
+      />
+    </View>
   );
 }
 
@@ -153,10 +191,29 @@ function CodeBody({ clip }: { clip: ClipItem }) {
 }
 
 function ColorBody({ clip }: { clip: ClipItem }) {
+  const raw = (clip.body || clip.preview || "").trim();
+  const paint = paintColorForNative(raw);
+  const ink = paint ? contrastingInk(paint) : "#1C1C1E";
+
   return (
-    <View style={styles.colorBody}>
-      <View style={[styles.colorSwatch, { backgroundColor: clip.body }]} />
-      <Text style={styles.colorHex}>{clip.body}</Text>
+    <View
+      style={[
+        styles.colorBody,
+        paint ? { backgroundColor: paint } : styles.colorBodyFallback,
+      ]}
+    >
+      <Text
+        style={[
+          styles.colorLabel,
+          {
+            color: ink,
+            backgroundColor: paint ? "rgba(0,0,0,0.22)" : "transparent",
+          },
+        ]}
+        numberOfLines={3}
+      >
+        {raw}
+      </Text>
     </View>
   );
 }
@@ -214,6 +271,26 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     width: 54,
+  },
+  bodyWrap: { position: "relative" },
+  cloudBadge: {
+    position: "absolute",
+    left: 8,
+    bottom: 8,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2,
+  },
+  cloudBadgeOnLight: {
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(0,0,0,0.08)",
+  },
+  cloudBadgeOnDark: {
+    backgroundColor: "rgba(0,0,0,0.45)",
   },
   linkBody: { backgroundColor: "#FFFFFF" },
   linkImage: { width: "100%", height: 118, backgroundColor: "#E8E8ED" },
@@ -290,17 +367,26 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
 
-  colorBody: { backgroundColor: "#FFFFFF", padding: 12, alignItems: "center", gap: 10 },
-  colorSwatch: {
-    width: "100%",
-    height: 110,
-    borderRadius: 12,
+  colorBody: {
+    minHeight: 148,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 24,
   },
-  colorHex: {
-    color: "#1C1C1E",
-    fontSize: 13,
+  colorBodyFallback: {
+    backgroundColor: "#F2F2F7",
+  },
+  colorLabel: {
+    fontSize: 14,
     fontWeight: "700",
     fontFamily: "monospace",
+    textAlign: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    overflow: "hidden",
+    maxWidth: "100%",
   },
 
   fileBody: { backgroundColor: "#FFFFFF", padding: 14, minHeight: 100 },

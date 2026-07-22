@@ -13,6 +13,7 @@ import { ClipboardWatchController } from "@/components/clipboard-watch-controlle
 import { AppThemeProvider, useAppTheme } from "@/contexts/app-theme-context";
 import { AuthProvider } from "@/contexts/auth-context";
 import { ClipStoreProvider } from "@/contexts/clip-store";
+import { SyncStatusProvider } from "@/contexts/sync-status";
 import { VaultProvider, useVault } from "@/contexts/vault-context";
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -66,8 +67,10 @@ export default function Layout() {
               <VaultProvider>
                 <SplashGate>
                   <ClipStoreProvider>
-                    <ClipboardWatchController />
-                    <RootStack />
+                    <SyncStatusProvider>
+                      <ClipboardWatchController />
+                      <RootStack />
+                    </SyncStatusProvider>
                   </ClipStoreProvider>
                 </SplashGate>
               </VaultProvider>

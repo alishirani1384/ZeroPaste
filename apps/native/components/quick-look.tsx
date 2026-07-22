@@ -1,5 +1,5 @@
 import type { ClipItem } from "@paste/clipboard-core";
-import { formatRelativeTime } from "@paste/clipboard-core";
+import { formatRelativeTime, paintColorForNative } from "@paste/clipboard-core";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -126,7 +126,12 @@ export function QuickLook({ clip, visible, onClose, onSave }: Props) {
             </>
           ) : clip.kind === "color" ? (
             <>
-              <View style={[styles.colorSwatch, { backgroundColor: clip.body }]} />
+              <View
+                style={[
+                  styles.colorSwatch,
+                  { backgroundColor: paintColorForNative(clip.body) ?? "#F2F2F7" },
+                ]}
+              />
               <Text style={[styles.titleInput, { color: ink, borderWidth: 0 }]}>{clip.body}</Text>
             </>
           ) : (

@@ -4,6 +4,7 @@ import { fetchVaultMetaBlob, upsertVaultMetaBlob } from "@paste/sync";
 
 import { useAuth } from "@/contexts/auth-context";
 import { useClipStore } from "@/contexts/clip-store";
+import { useSyncStatus } from "@/contexts/sync-status";
 import { useVault } from "@/contexts/vault-context";
 import {
   tryPullEncryptedClips,
@@ -21,6 +22,13 @@ export function CloudSync() {
   const { vaultKey, unlocked, recoveryKeyOnce, meta } = useVault();
   const auth = useAuth();
   const store = useClipStore();
+  const {
+    setPhase,
+    markClipSynced,
+    markClipLocalOnly,
+    markClipsSynced,
+    clearClipBadges,
+  } = useSyncStatus();
   const userId = auth.session?.user?.id ?? null;
   const seenRef = useRef(new Set<string>());
   const bodyHashRef = useRef(new Map<string, string>());
@@ -28,6 +36,20 @@ export function CloudSync() {
   const pinboardSeenRef = useRef(new Set<string>());
 
   const shelfReady = unlocked && !recoveryKeyOnce && !!vaultKey;
+
+  useEffect(() => {
+    if (!shelfReady) {
+      setPhase(auth.offlineChosen || !auth.configured ? "offline" : "idle");
+      return;
+    }
+    if (!userId) {
+      setPhase("unsigned");
+      return;
+    }
+    if (pulledUsers.has(userId)) {
+      setPhase("synced");
+    }
+  }, [shelfReady, userId, auth.offlineChosen, auth.configured, setPhase]);
 
   // Upload vault meta wraps once unlocked
   useEffect(() => {
@@ -40,10 +62,16 @@ export function CloudSync() {
   // Initial pull + realtime
   useEffect(() => {
     if (!shelfReady || !vaultKey || !userId) return;
-    if (pulledUsers.has(userId)) return;
 
     let cancelled = false;
     const key = vaultKey;
+    const alreadyPulled = pulledUsers.has(userId);
+
+    if (!alreadyPulled) {
+      setPhase("pulling", "Restoring from cloud…");
+    } else {
+      setPhase("synced");
+    }
 
     void (async () => {
       try {
@@ -62,6 +90,8 @@ export function CloudSync() {
         }
         for (const b of remoteBoards) pinboardSeenRef.current.add(b.id);
 
+        markClipsSynced(remote.map((c) => c.id));
+
         if (remote.length) store.upsertClips(remote);
         if (remoteBoards.length) {
           const merged = [
@@ -71,13 +101,22 @@ export function CloudSync() {
           store.setPinboards(merged);
         }
 
-        for (const board of store.pinboards) {
-          if (board.id === "history" || pinboardSeenRef.current.has(board.id)) continue;
-          void tryPushEncryptedPinboard(board, key);
+        if (!alreadyPulled) {
+          for (const board of store.pinboards) {
+            if (board.id === "history" || pinboardSeenRef.current.has(board.id)) continue;
+            void tryPushEncryptedPinboard(board, key);
+          }
         }
+
+        setPhase("synced");
       } catch (err) {
         console.warn("[sync] initial pull failed", err);
-        Alert.alert("Sync", "Could not restore clips from cloud. Local history still works.");
+        if (!alreadyPulled) {
+          setPhase("error", "Could not restore clips from cloud");
+          Alert.alert("Sync", "Could not restore clips from cloud. Local history still works.");
+        } else {
+          setPhase("synced");
+        }
       }
     })();
 
@@ -85,6 +124,7 @@ export function CloudSync() {
       seenRef.current.add(clip.id);
       bodyHashRef.current.set(clip.id, clip.contentHash);
       if (clip.deletedAt) deletedPushRef.current.add(clip.id);
+      markClipSynced(clip.id);
       store.upsertClip(clip);
     });
 
@@ -102,17 +142,34 @@ export function CloudSync() {
       if (clip.deletedAt) {
         if (deletedPushRef.current.has(clip.id)) continue;
         deletedPushRef.current.add(clip.id);
-        void tryPushEncryptedClip(clip, vaultKey);
+        void tryPushEncryptedClip(clip, vaultKey).then((result) => {
+          if (result === "pushed") markClipSynced(clip.id);
+        });
         continue;
       }
       const prevHash = bodyHashRef.current.get(clip.id);
       if (prevHash === clip.contentHash) continue;
       bodyHashRef.current.set(clip.id, clip.contentHash);
       void tryPushEncryptedClip(clip, vaultKey).then((result) => {
-        if (result === "pushed") seenRef.current.add(clip.id);
+        if (result === "pushed") {
+          seenRef.current.add(clip.id);
+          markClipSynced(clip.id);
+        } else if (result === "local_only") {
+          markClipLocalOnly(clip.id);
+        }
       });
     }
-  }, [store.clips, shelfReady, vaultKey, userId]);
+  }, [store.clips, shelfReady, vaultKey, userId, markClipSynced, markClipLocalOnly]);
+
+  // Reset badge map when signing out
+  useEffect(() => {
+    if (userId) return;
+    clearClipBadges();
+    seenRef.current.clear();
+    bodyHashRef.current.clear();
+    deletedPushRef.current.clear();
+    pinboardSeenRef.current.clear();
+  }, [userId, clearClipBadges]);
 
   return null;
 }

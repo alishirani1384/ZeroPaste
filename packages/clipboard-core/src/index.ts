@@ -1,5 +1,10 @@
 export type { ClipFilter, ClipItem, ClipKind, ClipSource, Pinboard } from "./types";
 export { classifyText, previewFromContent, titleFromContent } from "./classify";
+export {
+  contrastingInk,
+  looksLikeCssColor,
+  paintColorForNative,
+} from "./color";
 export { contentHash } from "./hash";
 export { formatByteSize, formatRelativeTime } from "./format";
 export { searchClips } from "./search";

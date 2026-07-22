@@ -9,7 +9,7 @@ import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BoardPicker } from "@/components/board-picker";
@@ -19,7 +19,9 @@ import { HistoryTopBar } from "@/components/history-top-bar";
 import { MasonryGrid } from "@/components/masonry-grid";
 import { QuickLook } from "@/components/quick-look";
 import { useAppTheme } from "@/contexts/app-theme-context";
+import { useAuth } from "@/contexts/auth-context";
 import { useClipStore } from "@/contexts/clip-store";
+import { useSyncStatus } from "@/contexts/sync-status";
 import { useVault } from "@/contexts/vault-context";
 import {
   bindForegroundTracking,
@@ -37,7 +39,9 @@ export function HistoryScreen() {
   const router = useRouter();
   const { isDark } = useAppTheme();
   const vault = useVault();
+  const auth = useAuth();
   const store = useClipStore();
+  const { phase, detail } = useSyncStatus();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [query, setQuery] = useState("");
@@ -166,6 +170,19 @@ export function HistoryScreen() {
   };
 
   const bg = isDark ? colors.bgDark : "#EFEFF4";
+  // Avoid empty-flash while local hydrate / first cloud pull finishes.
+  const awaitingFirstCloudPull =
+    !!auth.session &&
+    clips.length === 0 &&
+    phase !== "synced" &&
+    phase !== "error" &&
+    phase !== "offline" &&
+    phase !== "unsigned";
+  const showCloudLoading =
+    clips.length === 0 && (!store.ready || phase === "pulling" || awaitingFirstCloudPull);
+  const loadingLabel = !store.ready
+    ? "Loading history…"
+    : detail || "Restoring from cloud…";
 
   return (
     <View style={[styles.root, { backgroundColor: bg }]}>
@@ -189,14 +206,31 @@ export function HistoryScreen() {
           flexGrow: 1,
         }}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={[styles.emptyTitle, { color: isDark ? colors.inkDark : colors.inkLight }]}>
-              Nothing here yet
-            </Text>
-            <Text style={[styles.emptyBody, { color: isDark ? colors.mutedDark : colors.mutedLight }]}>
-              Copy something in another app, then switch back — or tap + to capture now.
-            </Text>
-          </View>
+          showCloudLoading ? (
+            <View style={styles.empty}>
+              <ActivityIndicator size="large" color={colors.crimson} />
+              <Text
+                style={[
+                  styles.emptyTitle,
+                  { color: isDark ? colors.inkDark : colors.inkLight, marginTop: 16 },
+                ]}
+              >
+                {loadingLabel}
+              </Text>
+              <Text style={[styles.emptyBody, { color: isDark ? colors.mutedDark : colors.mutedLight }]}>
+                Pulling your encrypted clips — this usually takes a second.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Text style={[styles.emptyTitle, { color: isDark ? colors.inkDark : colors.inkLight }]}>
+                Nothing here yet
+              </Text>
+              <Text style={[styles.emptyBody, { color: isDark ? colors.mutedDark : colors.mutedLight }]}>
+                Copy something in another app, then switch back — or tap + to capture now.
+              </Text>
+            </View>
+          )
         }
         renderItem={(item) => (
           <ClipCard

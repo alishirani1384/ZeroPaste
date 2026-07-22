@@ -8,7 +8,7 @@ const TYPE_ICONS: Partial<Record<ClipKind, ImageSourcePropType>> = {
   code: require("../assets/type/code.jpg"),
   other: require("../assets/type/text.jpg"),
   file: require("../assets/type/text.jpg"),
-  color: require("../assets/type/image.jpg"),
+  color: require("../assets/type/color.jpg"),
 };
 
 type Props = {
