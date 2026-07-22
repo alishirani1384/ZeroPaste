@@ -54,6 +54,18 @@ class ClipboardWatchService : Service() {
     return START_STICKY
   }
 
+  override fun onTaskRemoved(rootIntent: Intent?) {
+    super.onTaskRemoved(rootIntent)
+    // User swiped the app from recents — keep watch alive when preference is on.
+    if (ClipboardQueue.isEnabled(this)) {
+      try {
+        start(this)
+      } catch (err: Exception) {
+        Log.w(TAG, "restart after task removed failed", err)
+      }
+    }
+  }
+
   override fun onDestroy() {
     detachListener()
     running = false

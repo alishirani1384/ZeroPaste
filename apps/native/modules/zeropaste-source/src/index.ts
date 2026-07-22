@@ -27,6 +27,8 @@ type ZeropasteSourceNative = {
   suppressNextClipboardCapture: () => boolean;
   drainPendingCaptures: () => NativeClipboardCapture[];
   openNotificationSettings: () => boolean;
+  isIgnoringBatteryOptimizations: () => boolean;
+  requestIgnoreBatteryOptimizations: () => boolean;
 };
 
 function getModule(): ZeropasteSourceNative | null {
@@ -139,6 +141,14 @@ export function drainPendingCaptures(): NativeClipboardCapture[] {
 
 export function openNotificationSettings(): boolean {
   return getModule()?.openNotificationSettings() ?? false;
+}
+
+export function isIgnoringBatteryOptimizations(): boolean {
+  return getModule()?.isIgnoringBatteryOptimizations() ?? true;
+}
+
+export function requestIgnoreBatteryOptimizations(): boolean {
+  return getModule()?.requestIgnoreBatteryOptimizations() ?? false;
 }
 
 export function addClipboardCaptureListener(

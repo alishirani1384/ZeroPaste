@@ -7,8 +7,10 @@ import {
   isClipboardWatchAvailable,
   isClipboardWatchEnabled,
   isClipboardWatchRunning,
+  isIgnoringBatteryOptimizations,
   isSourceModuleAvailable,
   openUsageAccessSettings,
+  requestIgnoreBatteryOptimizations,
   startClipboardWatch,
   stopClipboardWatch,
 } from "zeropaste-source";
@@ -56,8 +58,15 @@ export default function AccountScreen() {
     if (!watchAvailable || watchBusy || !vault.unlocked) return;
     setWatchBusy(true);
     try {
-      if (next) await startClipboardWatch();
-      else await stopClipboardWatch({ disable: true });
+      if (next) {
+        await startClipboardWatch();
+        // Xiaomi / aggressive OEMs kill background apps unless exempted.
+        if (!isIgnoringBatteryOptimizations()) {
+          requestIgnoreBatteryOptimizations();
+        }
+      } else {
+        await stopClipboardWatch({ disable: true });
+      }
       refreshWatch();
     } finally {
       setWatchBusy(false);
@@ -107,7 +116,7 @@ export default function AccountScreen() {
         {Platform.OS === "android" ? (
           <SettingsSection
             title="Clipboard"
-            footer="Background watch uses a quiet notification so ZeroPaste can capture copies while ready. Usage Access helps label the source app."
+            footer="Background watch uses a quiet notification so ZeroPaste can capture copies after you leave the app. Allow unrestricted battery if your phone asks — Xiaomi and similar OEMs otherwise kill the watch when you swipe ZeroPaste away. Usage Access helps label the source app."
           >
             <SettingsRow
               label="Background watch"

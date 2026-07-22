@@ -6,7 +6,6 @@ import {
   isClipboardWatchAvailable,
   isClipboardWatchEnabled,
   startClipboardWatch,
-  stopClipboardWatch,
 } from "zeropaste-source";
 
 import { useClipStore } from "@/contexts/clip-store";
@@ -14,8 +13,9 @@ import { useVault } from "@/contexts/vault-context";
 import { clipFromNativeCapture } from "@/lib/clipboard-capture";
 
 /**
- * Keeps the Android clipboard foreground service aligned with vault unlock,
- * and ingests captures that happened while the UI was backgrounded.
+ * Keeps the Android clipboard foreground service running whenever the user
+ * left background watch on. Captures queue natively while the vault is locked;
+ * JS drains them on unlock / foreground.
  */
 export function ClipboardWatchController() {
   const vault = useVault();
@@ -36,24 +36,22 @@ export function ClipboardWatchController() {
 
   const drain = useCallback(() => {
     if (!isClipboardWatchAvailable()) return;
+    if (!vault.unlocked || vault.recoveryKeyOnce) return;
     for (const pending of drainPendingCaptures()) {
       void ingestNative(pending);
     }
-  }, [ingestNative]);
+  }, [ingestNative, vault.recoveryKeyOnce, vault.unlocked]);
 
+  // Keep the FGS alive based on preference — do not stop it when the vault locks
+  // or the UI unmounts; otherwise swiping the app away kills capture.
   useEffect(() => {
     if (Platform.OS !== "android" || !isClipboardWatchAvailable()) return;
-    if (!vault.unlocked || vault.recoveryKeyOnce) {
-      // Keep preference, but stop the service while locked so we don't capture into a locked vault.
-      void stopClipboardWatch().catch(() => undefined);
-      return;
-    }
 
     let cancelled = false;
     void (async () => {
       if (!isClipboardWatchEnabled()) return;
-      const ok = await startClipboardWatch();
-      if (cancelled || !ok) return;
+      await startClipboardWatch();
+      if (cancelled) return;
       drain();
     })();
 
@@ -61,7 +59,13 @@ export function ClipboardWatchController() {
       void ingestNative(capture);
     });
     const appSub = AppState.addEventListener("change", (state) => {
-      if (state === "active") drain();
+      if (state === "active") {
+        if (isClipboardWatchEnabled()) {
+          void startClipboardWatch().then(() => drain());
+        } else {
+          drain();
+        }
+      }
     });
 
     return () => {
@@ -69,7 +73,13 @@ export function ClipboardWatchController() {
       sub.remove();
       appSub.remove();
     };
-  }, [drain, ingestNative, vault.recoveryKeyOnce, vault.unlocked]);
+  }, [drain, ingestNative]);
+
+  // Drain queued captures whenever the vault becomes unlocked.
+  useEffect(() => {
+    if (!vault.unlocked || vault.recoveryKeyOnce) return;
+    drain();
+  }, [drain, vault.recoveryKeyOnce, vault.unlocked]);
 
   return null;
 }

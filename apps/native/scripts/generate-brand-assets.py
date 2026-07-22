@@ -70,7 +70,8 @@ def main() -> None:
   fit_mark(1024, 0.52, CLEAR, mark).resize((512, 512), Image.Resampling.LANCZOS).save(
     OUT / "adaptive-icon.png", optimize=True
   )
-  fit_mark(1024, 0.20, CLEAR, mark).save(OUT / "splash-icon.png", optimize=True)
+  # Splash: ~38% of canvas — readable Apple-style mark, not a tiny speck
+  fit_mark(1024, 0.38, CLEAR, mark).save(OUT / "splash-icon.png", optimize=True)
   fit_mark(192, 0.56, BG, mark).resize((96, 96), Image.Resampling.LANCZOS).save(
     OUT / "favicon.png", optimize=True
   )

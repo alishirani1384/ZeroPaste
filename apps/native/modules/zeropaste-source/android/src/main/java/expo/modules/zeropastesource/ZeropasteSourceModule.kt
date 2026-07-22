@@ -1,7 +1,10 @@
 package expo.modules.zeropastesource
 
+import android.annotation.SuppressLint
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -24,6 +27,37 @@ class ZeropasteSourceModule : Module() {
       }
       context.startActivity(intent)
       true
+    }
+
+    Function("isIgnoringBatteryOptimizations") {
+      val context = appContext.reactContext ?: return@Function true
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return@Function true
+      val pm = context.getSystemService(PowerManager::class.java) ?: return@Function true
+      pm.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    @SuppressLint("BatteryLife")
+    Function("requestIgnoreBatteryOptimizations") {
+      val context = appContext.reactContext ?: return@Function false
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return@Function true
+      val pm = context.getSystemService(PowerManager::class.java)
+      if (pm != null && pm.isIgnoringBatteryOptimizations(context.packageName)) {
+        return@Function true
+      }
+      try {
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+          data = Uri.parse("package:${context.packageName}")
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+        true
+      } catch (_: Exception) {
+        val fallback = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(fallback)
+        true
+      }
     }
 
     Function("getLastForegroundApp") {
@@ -89,7 +123,7 @@ class ZeropasteSourceModule : Module() {
         }
       } else {
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-          data = android.net.Uri.parse("package:${context.packageName}")
+          data = Uri.parse("package:${context.packageName}")
         }
       }
       intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

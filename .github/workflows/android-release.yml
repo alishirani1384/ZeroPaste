@@ -91,17 +91,32 @@ jobs:
               echo "EXPO_PUBLIC_SERVER_URL=${EXPO_PUBLIC_SERVER_URL}"
             fi
           } > .env
-          echo "Wrote apps/native/.env"
+          echo "Wrote apps/native/.env (url_len=${#EXPO_PUBLIC_SUPABASE_URL} key_len=${#EXPO_PUBLIC_SUPABASE_ANON_KEY})"
 
       - name: Expo prebuild (generate android/)
         working-directory: apps/native
-        run: bunx expo prebuild --platform android --non-interactive
+        run: |
+          bunx expo prebuild --platform android --non-interactive
+          # Fail early if Supabase was not baked into Expo config extra
+          node -e "
+            const cfg = require('@expo/config').getConfig(process.cwd(), { skipSDKVersionRequirement: true });
+            const u = cfg.exp.extra?.EXPO_PUBLIC_SUPABASE_URL || '';
+            const k = cfg.exp.extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+            if (!u || !k) {
+              console.error('Supabase env missing from expo config extra after prebuild');
+              process.exit(1);
+            }
+            console.log('Expo extra has Supabase url_len=' + u.length + ' key_len=' + k.length);
+          "
 
       - name: Assemble release APK
         working-directory: apps/native/android
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          EXPO_PUBLIC_SERVER_URL: ${{ secrets.EXPO_PUBLIC_SERVER_URL }}
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace
