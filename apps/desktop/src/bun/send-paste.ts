@@ -50,7 +50,11 @@ function initWinSend(): (() => void) | null {
 
 async function run(cmd: string[], label: string): Promise<boolean> {
   try {
-    const proc = Bun.spawn(cmd, { stdout: "ignore", stderr: "pipe" });
+    const proc = Bun.spawn(cmd, {
+      stdout: "ignore",
+      stderr: "pipe",
+      windowsHide: true,
+    } as Parameters<typeof Bun.spawn>[1]);
     const code = await proc.exited;
     if (code !== 0) {
       const err = await new Response(proc.stderr).text();
@@ -105,6 +109,8 @@ export async function sendCtrlV(): Promise<boolean> {
       [
         "powershell",
         "-NoProfile",
+        "-WindowStyle",
+        "Hidden",
         "-STA",
         "-Command",
         "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')",

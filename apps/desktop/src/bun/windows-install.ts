@@ -4,12 +4,13 @@
  * - Apps & Features uninstall entry
  * - A silent uninstall script
  *
- * Called on first launch (and refreshed when the install path changes).
+ * Called on every launch; uninstall registration must succeed even if shortcuts fail.
  */
+import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { resolveLaunchPath } from "./autostart";
+import { isPackagedAppProcess, resolveLaunchPath } from "./autostart";
 
 const APP_NAME = "ZeroPaste";
 const UNINSTALL_KEY =
@@ -24,6 +25,12 @@ type Marker = {
 };
 
 function desktopDir(): string {
+  // Prefer OneDrive Desktop when Windows redirects it there.
+  const oneDrive = process.env.OneDrive || process.env.OneDriveConsumer;
+  if (oneDrive) {
+    const od = join(oneDrive, "Desktop");
+    if (existsSync(od)) return od;
+  }
   return join(homedir(), "Desktop");
 }
 
@@ -36,26 +43,27 @@ function zdir(): string {
 }
 
 async function ensureDir(path: string) {
-  const { mkdirSync } = await import("node:fs");
-  mkdirSync(path, { recursive: true });
+  if (!existsSync(path)) mkdirSync(path, { recursive: true });
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  return existsSync(path);
 }
 
 async function runPs(script: string): Promise<void> {
-  const proc = Bun.spawn(
-    ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
-    { stdout: "pipe", stderr: "pipe" },
-  );
-  const code = await proc.exited;
-  if (code !== 0) {
-    const err = await new Response(proc.stderr).text();
-    throw new Error(err.trim() || `powershell exited ${code}`);
-  }
+  const { spawnHiddenPowerShell } = await import("./platform/hidden-powershell");
+  const { code, stderr } = await spawnHiddenPowerShell(["-ExecutionPolicy", "Bypass", "-Command", script], {
+    stdout: "ignore",
+    stderr: "pipe",
+  });
+  if (code !== 0) throw new Error(stderr || `powershell exited ${code}`);
 }
 
 function resolveIconPath(launchPath: string): string {
   const dir = dirname(launchPath);
   const candidates = [
     join(dir, "zeropaste.ico"),
+    join(dir, "..", "Resources", "app", "views", "mainview", "zeropaste.ico"),
     join(dir, "..", "Resources", "app", "views", "mainview", "zeropaste.png"),
     join(dir, "..", "assets", "zeropaste.ico"),
     join(dirname(dirname(dir)), "assets", "zeropaste.ico"),
@@ -67,7 +75,24 @@ function resolveIconPath(launchPath: string): string {
       /* continue */
     }
   }
-  return launchPath; // fall back to exe icon
+  return launchPath;
+}
+
+/** Prefer a double-clickable target for shortcuts (launcher.exe > launcher > bun.exe). */
+function shortcutTarget(launchPath: string): string {
+  const dir = dirname(launchPath);
+  const lower = launchPath.replace(/\\/g, "/").toLowerCase();
+  if (lower.endsWith("/bun.exe") || lower.endsWith("/bun")) {
+    for (const name of ["launcher.exe", "launcher", "ZeroPaste.exe"]) {
+      const c = join(dir, name);
+      try {
+        if (Bun.file(c).size > 0) return c;
+      } catch {
+        /* continue */
+      }
+    }
+  }
+  return launchPath;
 }
 
 async function createShortcut(lnkPath: string, target: string, icon: string, workDir: string) {
@@ -88,57 +113,41 @@ $s.Save()
 async function writeUninstallScript(launchPath: string): Promise<string> {
   await ensureDir(zdir());
   const scriptPath = join(zdir(), "uninstall.ps1");
-  const installRoot = dirname(dirname(launchPath)); // .../bin/launcher.exe → app root often one up from bin
-  // Electrobun stable: %LOCALAPPDATA%\app.zeropaste.desktop\stable\...
   const localApp = join(
     process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"),
     "app.zeropaste.desktop",
   );
 
-  const body = `# ZeroPaste full uninstall — run via Apps & Features or:
-#   powershell -NoProfile -ExecutionPolicy Bypass -File "$PSCommandPath"
+  const body = `# ZeroPaste full uninstall
+# Settings → Apps → ZeroPaste → Uninstall
+# Or: powershell -NoProfile -ExecutionPolicy Bypass -File "$PSCommandPath"
 $ErrorActionPreference = 'SilentlyContinue'
 Write-Host "Uninstalling ZeroPaste..."
 
-# Stop running instances
 Get-CimInstance Win32_Process | Where-Object {
   $_.Name -match '^(launcher|bun|electrobun|ZeroPaste)' -and
-  ($_.CommandLine -match 'zeropaste|ZeroPaste' -or $_.ExecutablePath -match 'zeropaste|ZeroPaste')
+  ($_.CommandLine -match 'zeropaste|ZeroPaste|app\\.zeropaste' -or $_.ExecutablePath -match 'zeropaste|ZeroPaste|app\\.zeropaste')
 } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 
-# Login autostart
 reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v ZeroPaste /f | Out-Null
 
-# Shortcuts
 $desktop = [Environment]::GetFolderPath('Desktop')
 $start = Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs'
 Remove-Item (Join-Path $desktop 'ZeroPaste.lnk') -Force
 Remove-Item (Join-Path $start 'ZeroPaste.lnk') -Force
 
-# App install tree (Electrobun channel folders)
 $install = ${JSON.stringify(localApp)}
 if (Test-Path $install) { Remove-Item $install -Recurse -Force }
 
-# Also try the directory that contained the launcher we registered
-$launchDir = ${JSON.stringify(dirname(launchPath))}
-$appRoot = ${JSON.stringify(installRoot)}
-if (Test-Path $appRoot -and $appRoot -notmatch 'OneDrive\\\\Desktop\\\\paste') {
-  # Only delete if it looks like an installed copy under LocalAppData, not the monorepo
-  if ($appRoot -like "*app.zeropaste.desktop*") {
-    Remove-Item $appRoot -Recurse -Force
-  }
-}
-
-# User data (vault meta, clips, autostart vbs) — remove for a full wipe
 $udata = Join-Path $env:USERPROFILE '.zeropaste'
-if (Test-Path $udata) { Remove-Item $udata -Recurse -Force }
-
-# Uninstall registry entry (self)
+# Delete uninstall entry before wiping this folder (script lives here)
 reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ZeroPaste" /f | Out-Null
+if (Test-Path $udata) { Remove-Item $udata -Recurse -Force }
 
 Write-Host "ZeroPaste removed."
 `;
   await Bun.write(scriptPath, body);
+  console.log("[ZeroPaste] wrote uninstall script", scriptPath);
   return scriptPath;
 }
 
@@ -158,23 +167,24 @@ async function registerUninstall(launchPath: string, uninstallScript: string, ic
     ["NoRepair", "REG_DWORD", "1"],
   ];
 
-  // Ensure key exists
-  await Bun.spawn(
-    ["reg", "add", UNINSTALL_KEY, "/f"],
-    { stdout: "ignore", stderr: "ignore" },
-  ).exited;
+  await Bun.spawn(["reg", "add", UNINSTALL_KEY, "/f"], {
+    stdout: "ignore",
+    stderr: "ignore",
+    windowsHide: true,
+  } as Parameters<typeof Bun.spawn>[1]).exited;
 
   for (const [name, type, data] of adds) {
     const proc = Bun.spawn(
       ["reg", "add", UNINSTALL_KEY, "/v", name, "/t", type, "/d", data, "/f"],
-      { stdout: "ignore", stderr: "pipe" },
+      { stdout: "ignore", stderr: "pipe", windowsHide: true } as Parameters<typeof Bun.spawn>[1],
     );
     const code = await proc.exited;
     if (code !== 0) {
-      const err = await new Response(proc.stderr).text();
+      const err = await new Response(proc.stderr as ReadableStream).text();
       console.warn("[ZeroPaste] uninstall reg", name, err.trim());
     }
   }
+  console.log("[ZeroPaste] registered Apps & Features uninstall entry");
 }
 
 async function readMarker(): Promise<Marker | null> {
@@ -187,54 +197,76 @@ async function readMarker(): Promise<Marker | null> {
   }
 }
 
+function isIntegrableLaunchPath(launchPath: string): boolean {
+  const base = launchPath.replace(/\\/g, "/").toLowerCase();
+  if (base.endsWith("/launcher.exe") || base.endsWith("/launcher")) return true;
+  if (base.endsWith("/zeropaste.exe")) return true;
+  // Installed / packaged host often executes as bun.exe inside the app bundle.
+  if ((base.endsWith("/bun.exe") || base.endsWith("/bun")) && isPackagedAppProcess()) return true;
+  return isPackagedAppProcess();
+}
+
 /**
  * Create desktop + Start Menu shortcuts and register uninstall in Apps & Features.
- * Safe to call on every boot — no-ops when already current.
+ * Uninstall script is written first and never skipped when shortcuts fail.
  */
 export async function ensureWindowsDesktopIntegration(): Promise<void> {
   if (process.platform !== "win32") return;
 
   const launchPath = resolveLaunchPath();
-  const base = launchPath.replace(/\\/g, "/").toLowerCase();
-  // Only integrate when we have a real app launcher (not a bare bun from PATH).
-  if (!base.endsWith("/launcher.exe") && !base.endsWith("/zeropaste.exe")) {
-    console.log("[ZeroPaste] skip desktop integration (no launcher.exe)");
+  console.log("[ZeroPaste] desktop integration launchPath=", launchPath, "execPath=", process.execPath);
+
+  if (!isIntegrableLaunchPath(launchPath)) {
+    console.log("[ZeroPaste] skip desktop integration (not a packaged app process)");
     return;
+  }
+
+  const target = shortcutTarget(launchPath);
+  const icon = resolveIconPath(target);
+  const workDir = dirname(target);
+
+  // 1) Always write uninstall.ps1 + registry — even if shortcuts fail.
+  let uninstallScript: string;
+  try {
+    uninstallScript = await writeUninstallScript(target);
+    await registerUninstall(target, uninstallScript, icon);
+  } catch (err) {
+    console.warn("[ZeroPaste] uninstall registration failed", err);
+    return;
+  }
+
+  // 2) Shortcuts (best-effort)
+  const desktopLnk = join(desktopDir(), `${APP_NAME}.lnk`);
+  const startLnk = join(startMenuDir(), `${APP_NAME}.lnk`);
+  try {
+    const prev = await readMarker();
+    const needsShortcuts =
+      !prev ||
+      prev.launchPath !== target ||
+      !(await pathExists(desktopLnk)) ||
+      !(await pathExists(startLnk));
+
+    if (needsShortcuts) {
+      await ensureDir(startMenuDir());
+      await createShortcut(desktopLnk, target, icon, workDir);
+      await createShortcut(startLnk, target, icon, workDir);
+      console.log("[ZeroPaste] shortcuts", desktopLnk, startLnk);
+    }
+  } catch (err) {
+    console.warn("[ZeroPaste] shortcut creation failed (uninstall still registered)", err);
   }
 
   try {
     await ensureDir(zdir());
-    const icon = resolveIconPath(launchPath);
-    const workDir = dirname(launchPath);
-    const desktopLnk = join(desktopDir(), `${APP_NAME}.lnk`);
-    const startLnk = join(startMenuDir(), `${APP_NAME}.lnk`);
-
-    const prev = await readMarker();
-    const needsShortcuts =
-      !prev ||
-      prev.launchPath !== launchPath ||
-      !(await Bun.file(desktopLnk).exists()) ||
-      !(await Bun.file(startLnk).exists());
-
-    if (needsShortcuts) {
-      await createShortcut(desktopLnk, launchPath, icon, workDir);
-      await ensureDir(startMenuDir());
-      await createShortcut(startLnk, launchPath, icon, workDir);
-      console.log("[ZeroPaste] shortcuts", desktopLnk, startLnk);
-    }
-
-    const uninstallScript = await writeUninstallScript(launchPath);
-    await registerUninstall(launchPath, uninstallScript, icon);
-
     const marker: Marker = {
-      launchPath,
+      launchPath: target,
       desktopShortcut: desktopLnk,
       startMenuShortcut: startLnk,
       uninstallScript,
     };
     await Bun.write(MARKER(), JSON.stringify(marker, null, 2));
-    console.log("[ZeroPaste] Windows integration ready (desktop shortcut + uninstall)");
+    console.log("[ZeroPaste] Windows integration ready");
   } catch (err) {
-    console.warn("[ZeroPaste] Windows desktop integration failed", err);
+    console.warn("[ZeroPaste] integration marker write failed", err);
   }
 }

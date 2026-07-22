@@ -29,6 +29,11 @@ Electrobun’s default Windows “installer” is **not** an Electron-style wiza
 3. Extract → install/run
 
 That is expected for stock Electrobun (`electrobun build --env=stable`).
+A brief console window during extract is normal for `ZeroPaste-Setup.exe`.
+
+**If Setup.exe does nothing when double-clicked:** it must stay next to
+`ZeroPaste-Setup.tar.zst`, and it must remain a **console** binary. Do not
+force GUI subsystem on Setup (only on `launcher.exe` / `bun.exe`).
 
 For a classic **NSIS / MSI** installer, use a third-party packager such as  
 [electrobun-builder-for-windows](https://github.com/Catharacta/electrobun-builder) after the Electrobun build.
@@ -38,15 +43,19 @@ For a classic **NSIS / MSI** installer, use a third-party packager such as
 Electrobun’s stock `ZeroPaste-Setup.exe` is only an extractor. It does **not** create a
 desktop shortcut or an Apps & Features uninstall entry by itself.
 
-ZeroPaste does this on **first launch** of `launcher.exe`:
+ZeroPaste does this on **every launch** of a packaged `launcher` / `bun` host:
 
 | Item | Location |
 |---|---|
-| Desktop shortcut | `%USERPROFILE%\Desktop\ZeroPaste.lnk` |
+| Desktop shortcut | Desktop `\ZeroPaste.lnk` (OneDrive Desktop if redirected) |
 | Start Menu | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\ZeroPaste.lnk` |
 | Uninstall entry | Settings → Apps → Installed apps → **ZeroPaste** |
-| Uninstall script | `%USERPROFILE%\.zeropaste\uninstall.ps1` |
+| Uninstall script | `%USERPROFILE%\.zeropaste\uninstall.ps1` (**always written first**) |
 | Login autostart | hidden `wscript` → launcher `--autostart` (no PowerShell window) |
+
+If `uninstall.ps1` is missing after a launch, check the host log for
+`skip desktop integration` or `uninstall registration failed` — older builds
+skipped when `process.execPath` was `bun.exe` instead of `launcher.exe`.
 
 ### How to uninstall fully
 

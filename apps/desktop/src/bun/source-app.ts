@@ -1,6 +1,7 @@
 /** Best-effort foreground app / window metadata for clip source. */
 
 import { hostname } from "node:os";
+import { dlopen, ptr } from "bun:ffi";
 
 import { commandExists } from "./platform/session";
 
@@ -23,39 +24,42 @@ export function appNameFromWindowTitle(title: string): string {
   return t.slice(0, 80);
 }
 
+let user32: ReturnType<typeof dlopen> | null = null;
+
+function initWin(): boolean {
+  if (process.platform !== "win32") return false;
+  if (user32) return true;
+  try {
+    user32 = dlopen("user32.dll", {
+      GetForegroundWindow: { args: [], returns: "ptr" },
+      GetWindowTextW: { args: ["ptr", "ptr", "i32"], returns: "i32" },
+    });
+    return true;
+  } catch {
+    user32 = null;
+    return false;
+  }
+}
+
+function getForegroundWindowTitleWin(): string | null {
+  if (!initWin() || !user32) return null;
+  try {
+    const h = user32.symbols.GetForegroundWindow();
+    if (!h) return null;
+    const buf = Buffer.alloc(512 * 2);
+    const n = user32.symbols.GetWindowTextW(h, ptr(buf), 512);
+    if (!n) return null;
+    const name = buf.toString("utf16le", 0, n * 2).trim();
+    if (!name || name === "ZeroPaste") return null;
+    return name.slice(0, 240);
+  } catch {
+    return null;
+  }
+}
+
 async function getForegroundWindowTitle(): Promise<string | null> {
   if (process.platform === "win32") {
-    try {
-      const proc = Bun.spawn(
-        [
-          "powershell",
-          "-NoProfile",
-          "-Command",
-          `
-Add-Type @"
-using System;
-using System.Text;
-using System.Runtime.InteropServices;
-public class ZpSrc {
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
-}
-"@
-$h = [ZpSrc]::GetForegroundWindow()
-$sb = New-Object System.Text.StringBuilder 512
-[void][ZpSrc]::GetWindowText($h, $sb, $sb.Capacity)
-$t = $sb.ToString()
-if ($t) { $t } else { '' }
-`,
-        ],
-        { stdout: "pipe", stderr: "ignore" },
-      );
-      const name = (await new Response(proc.stdout).text()).trim();
-      await proc.exited;
-      if (name && name !== "ZeroPaste") return name.slice(0, 240);
-    } catch {
-      /* ignore */
-    }
+    return getForegroundWindowTitleWin();
   }
 
   if (process.platform === "linux" && (await commandExists("xdotool"))) {
@@ -85,8 +89,9 @@ if ($t) { $t } else { '' }
 export async function getForegroundSource(): Promise<ForegroundSource> {
   const windowTitle = (await getForegroundWindowTitle()) ?? "Unknown app";
   return {
-    windowTitle,
     appName: appNameFromWindowTitle(windowTitle),
+    windowTitle,
+    // kept for older callers that might expect device fields via spread elsewhere
   };
 }
 

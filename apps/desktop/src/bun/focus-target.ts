@@ -5,24 +5,15 @@
  */
 
 import { commandExists } from "./platform/session";
+import { spawnHiddenPowerShell } from "./platform/hidden-powershell";
 
 let targetHwnd: string | null = null;
 let targetFocusHwnd: string | null = null;
 
 async function runPs(script: string): Promise<string> {
-  const proc = Bun.spawn(["powershell", "-NoProfile", "-STA", "-Command", script], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [out, err, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (code !== 0) {
-    throw new Error(err.trim() || `powershell exited ${code}`);
-  }
-  return out.trim();
+  const { stdout, stderr, code } = await spawnHiddenPowerShell(["-STA", "-Command", script]);
+  if (code !== 0) throw new Error(stderr || `powershell exited ${code}`);
+  return stdout;
 }
 
 const FOCUS_HELPER = `

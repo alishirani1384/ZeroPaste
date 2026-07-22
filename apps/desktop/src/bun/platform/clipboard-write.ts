@@ -82,10 +82,9 @@ async function writeTextWinPowerShell(text: string): Promise<void> {
   const file = join(dir, "clip.txt");
   await writeFile(file, text, "utf8");
   const psPath = file.replace(/'/g, "''");
-  const proc = Bun.spawn(
+  const { spawnHiddenPowerShell } = await import("./hidden-powershell");
+  const { code } = await spawnHiddenPowerShell(
     [
-      "powershell",
-      "-NoProfile",
       "-STA",
       "-Command",
       `
@@ -96,7 +95,6 @@ $t = [System.IO.File]::ReadAllText('${psPath}')
     ],
     { stdout: "ignore", stderr: "pipe" },
   );
-  const code = await proc.exited;
   try {
     await unlink(file);
   } catch {
@@ -110,10 +108,9 @@ async function writeImageWinPowerShell(bytes: Uint8Array, ext: "bmp" | "png"): P
   const file = join(dir, `clip.${ext}`);
   await writeFile(file, bytes);
   const psPath = file.replace(/'/g, "''");
-  const proc = Bun.spawn(
+  const { spawnHiddenPowerShell } = await import("./hidden-powershell");
+  const { code } = await spawnHiddenPowerShell(
     [
-      "powershell",
-      "-NoProfile",
       "-STA",
       "-Command",
       `
@@ -126,7 +123,6 @@ $img.Dispose()
     ],
     { stdout: "ignore", stderr: "pipe" },
   );
-  const code = await proc.exited;
   try {
     await unlink(file);
   } catch {

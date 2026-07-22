@@ -54,7 +54,9 @@ export function resolveLaunchPath(): string {
     const dir = dirname(exe);
     const candidates = [
       join(dir, "launcher.exe"),
+      join(dir, "launcher"),
       join(dir, "..", "launcher.exe"),
+      join(dir, "..", "launcher"),
       join(dir, "ZeroPaste.exe"),
       exe,
     ];
@@ -67,6 +69,18 @@ export function resolveLaunchPath(): string {
     }
   }
   return exe;
+}
+
+/** True when this process is inside an Electrobun app bundle (installed or build/). */
+export function isPackagedAppProcess(): boolean {
+  if (process.platform !== "win32") return Boolean(process.env.APPIMAGE);
+  const p = process.execPath.replace(/\\/g, "/").toLowerCase();
+  return (
+    p.includes("/app.zeropaste.desktop/") ||
+    p.includes("/zeropaste/") ||
+    p.includes("/zeropaste-dev/") ||
+    /\/build\/(stable|dev|canary)-win/.test(p)
+  );
 }
 
 /** True when launched from login autostart (tray-only until hotkey). */

@@ -80,18 +80,29 @@ function brand(exePath: string, rcedit: string) {
   }
   try {
     execFileSync(rcedit, [target, "--set-icon", ico], { stdio: "pipe" });
-    // Console-subsystem EXEs open a PowerShell/cmd window on login — force GUI.
-    setWindowsGuiSubsystem(target);
+    // Only force GUI on the long-running app binaries. The Electrobun Setup
+    // extractor is a console app — GUI subsystem makes double-click do nothing.
+    if (shouldForceGuiSubsystem(exePath)) {
+      setWindowsGuiSubsystem(target);
+    }
     if (tempExe) {
       copyFileSync(tempExe, exePath);
       unlinkSync(tempExe);
-      setWindowsGuiSubsystem(exePath);
+      if (shouldForceGuiSubsystem(exePath)) setWindowsGuiSubsystem(exePath);
     }
     console.log(`[brand-icons] OK ${exePath}`);
   } catch (err) {
     if (tempExe && existsSync(tempExe)) unlinkSync(tempExe);
     console.warn(`[brand-icons] FAIL ${exePath}`, err);
   }
+}
+
+/** Runtime hosts only — never Setup / extractors / tooling. */
+function shouldForceGuiSubsystem(exePath: string): boolean {
+  const base = exePath.replace(/\\/g, "/").split("/").pop()?.toLowerCase() ?? "";
+  if (base.includes("setup")) return false;
+  if (base.includes("zig-zstd") || base.includes("bsdiff") || base.includes("bspatch")) return false;
+  return base === "launcher.exe" || base === "launcher" || base === "bun.exe" || base === "bun";
 }
 
 /** IMAGE_SUBSYSTEM_WINDOWS_GUI = 2 — no console window when double-clicked / Run key. */
@@ -111,6 +122,25 @@ function setWindowsGuiSubsystem(exePath: string) {
     console.log(`[brand-icons] subsystem CONSOLE→GUI ${exePath} (was ${prev})`);
   } catch (err) {
     console.warn(`[brand-icons] subsystem patch failed ${exePath}`, err);
+  }
+}
+
+/** Restore Electrobun Setup extractor to console (3) if we previously patched it. */
+function setWindowsConsoleSubsystem(exePath: string) {
+  try {
+    const buf = Buffer.from(readFileSync(exePath));
+    if (buf.length < 0x40 || buf.readUInt16LE(0) !== 0x5a4d) return;
+    const pe = buf.readUInt32LE(0x3c);
+    if (pe + 24 + 70 > buf.length) return;
+    if (buf.toString("ascii", pe, pe + 4) !== "PE\0\0") return;
+    const subOff = pe + 24 + 68;
+    const prev = buf.readUInt16LE(subOff);
+    if (prev === 3) return;
+    buf.writeUInt16LE(3, subOff); // IMAGE_SUBSYSTEM_WINDOWS_CUI
+    writeFileSync(exePath, buf);
+    console.log(`[brand-icons] subsystem →CONSOLE ${exePath} (was ${prev})`);
+  } catch (err) {
+    console.warn(`[brand-icons] console subsystem restore failed ${exePath}`, err);
   }
 }
 
@@ -137,6 +167,13 @@ function main() {
   }
 
   for (const t of targets) brand(t, rcedit);
+
+  // Repair any Setup extractors we may have GUI-patched in earlier builds.
+  for (const t of targets) {
+    const base = t.replace(/\\/g, "/").split("/").pop()?.toLowerCase() ?? "";
+    if (base.includes("setup") && base.endsWith(".exe")) setWindowsConsoleSubsystem(t);
+  }
+
   console.log(`[brand-icons] done (${targets.size} targets)`);
 }
 
