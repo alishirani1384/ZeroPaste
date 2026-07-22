@@ -95,13 +95,15 @@ jobs:
 
       - name: Expo prebuild (generate android/)
         working-directory: apps/native
+        # GitHub Actions sets CI=1; Expo no longer accepts --non-interactive
         run: |
-          bunx expo prebuild --platform android --non-interactive
+          bunx expo prebuild --platform android
           # Fail early if Supabase was not baked into Expo config extra
+          bunx expo config --json --type public > /tmp/expo-config.json
           node -e "
-            const cfg = require('@expo/config').getConfig(process.cwd(), { skipSDKVersionRequirement: true });
-            const u = cfg.exp.extra?.EXPO_PUBLIC_SUPABASE_URL || '';
-            const k = cfg.exp.extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+            const cfg = require('/tmp/expo-config.json');
+            const u = cfg.extra?.EXPO_PUBLIC_SUPABASE_URL || '';
+            const k = cfg.extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
             if (!u || !k) {
               console.error('Supabase env missing from expo config extra after prebuild');
               process.exit(1);
