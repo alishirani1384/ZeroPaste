@@ -1,7 +1,6 @@
 "use client";
 
-import { searchClips, type ClipItem } from "@paste/clipboard-core";
-import { Lock } from "lucide-react";
+import { searchClips, type ClipItem, type Pinboard } from "@paste/clipboard-core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
@@ -10,9 +9,9 @@ import {
   FALLBACK_STATE,
   createPinboard,
   deleteClip,
+  deletePinboard,
   fitDesktopWindow,
   pasteClip,
-  pauseCapture,
   pinClipToBoard,
   reorderClips,
   setDesktopKeyboardFocus,
@@ -20,15 +19,18 @@ import {
   subscribeBridge,
   suppressCapture,
   updateClipBody,
+  updatePinboard,
   type BridgeState,
 } from "@/lib/bridge";
 import { useDesktopWindowFit } from "@/components/desktop-window-fit";
-import { useVault } from "@/components/vault/vault-context";
 
+import { AccountSheet } from "./account-sheet";
 import { ClipCard, ClipCardFace } from "./clip-card";
 import { ClipContextMenu, type ClipMenuAction } from "./clip-context-menu";
 import { NewPinboardPopover, type NewPinboardAnchor } from "./new-pinboard-popover";
 import { PanelToolbar } from "./panel-toolbar";
+import { PinboardContextMenu, type PinboardMenuAction } from "./pinboard-context-menu";
+import { PinboardEditorPopover } from "./pinboard-editor-popover";
 import { QuickLook } from "./quick-look";
 import { shelfSlots, useShelfReorder } from "./use-shelf-reorder";
 
@@ -37,15 +39,27 @@ type PinComposer = {
   pinClipId?: string;
 };
 
+type BoardEditor = {
+  board: Pinboard;
+  focus: "name" | "color";
+  anchor: NewPinboardAnchor;
+};
+
 export function ClipboardPanel() {
-  const vault = useVault();
   const [state, setState] = useState<BridgeState>(FALLBACK_STATE);
   const [activeBoard, setActiveBoard] = useState("history");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [compact, setCompact] = useState(false);
   const [quickLook, setQuickLook] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; clipId: string } | null>(null);
+  const [boardMenu, setBoardMenu] = useState<{
+    x: number;
+    y: number;
+    boardId: string;
+  } | null>(null);
+  const [boardEditor, setBoardEditor] = useState<BoardEditor | null>(null);
   const [pinComposer, setPinComposer] = useState<PinComposer | null>(null);
   /** Optimistic order so drop doesn't snap back while host persists. */
   const [orderOverride, setOrderOverride] = useState<string[] | null>(null);
@@ -64,8 +78,6 @@ export function ClipboardPanel() {
       toast.error(w, { duration: 8000 });
     }
   }, [state.hostWarnings]);
-
-  const paused = state.pausedUntil !== null && Date.now() < (state.pausedUntil ?? 0);
 
   const baseClips = useMemo(() => {
     return searchClips(state.clips, {
@@ -152,6 +164,29 @@ export function ClipboardPanel() {
     setActiveBoard(board.id);
     setPinComposer(null);
   }, []);
+
+  const onBoardMenuAction = useCallback(
+    (board: Pinboard, action: PinboardMenuAction) => {
+      if (action === "delete") {
+        if (!window.confirm(`Delete pinboard “${board.name}”? Clips stay in History.`)) return;
+        void deletePinboard(board.id).then((ok) => {
+          if (!ok) {
+            toast.error("Could not delete pinboard");
+            return;
+          }
+          if (activeBoard === board.id) setActiveBoard("history");
+          toast.message(`Deleted “${board.name}”`);
+        });
+        return;
+      }
+      setBoardEditor({
+        board,
+        focus: action === "recolor" ? "color" : "name",
+        anchor: { kind: "point", x: boardMenu?.x ?? 40, y: boardMenu?.y ?? 40 },
+      });
+    },
+    [activeBoard, boardMenu?.x, boardMenu?.y],
+  );
 
   const openQuickLook = useCallback((id?: string) => {
     if (id) setSelectedId(id);
@@ -244,6 +279,9 @@ export function ClipboardPanel() {
   const byId = useMemo(() => new Map(clips.map((c) => [c.id, c])), [clips]);
 
   const menuClip = menu ? (state.clips.find((c) => c.id === menu.clipId) ?? null) : null;
+  const menuBoard = boardMenu
+    ? (state.pinboards.find((b) => b.id === boardMenu.boardId) ?? null)
+    : null;
   const composerPinClip = pinComposer?.pinClipId
     ? (state.clips.find((c) => c.id === pinComposer.pinClipId) ?? null)
     : null;
@@ -369,21 +407,30 @@ export function ClipboardPanel() {
     return () => window.clearTimeout(t);
   }, []);
 
-  // Fit HWND to the full shelf (1100×320). Create-at-max makes the whole width clickable.
-  useDesktopWindowFit(panelRef, "panel", !quickLook, quickLook ? "ql" : "shelf");
+  const shelfVisible = !quickLook && !accountOpen;
+
+  // Fit HWND to the full shelf (1100×340). Create-at-max makes the whole width clickable.
+  useDesktopWindowFit(panelRef, "panel", shelfVisible, shelfVisible ? "shelf" : "hidden");
 
   useEffect(() => {
-    if (quickLook) return;
+    if (!shelfVisible) return;
+    // Keep shelf size stable — resizing for the context menu jumped the window upward.
     const id = window.requestAnimationFrame(() => {
-      void fitDesktopWindow({ width: 1100, height: 320, anchor: "bottom-center" });
+      void fitDesktopWindow({ width: 1100, height: 340, anchor: "bottom-center" });
     });
     return () => window.cancelAnimationFrame(id);
-  }, [quickLook]);
+  }, [shelfVisible]);
+
+  useEffect(() => {
+    if (accountOpen) void setDesktopWindowMode("vault");
+    else if (!quickLook) void setDesktopWindowMode("panel");
+  }, [accountOpen, quickLook]);
 
   return (
+    <>
     <div
       ref={panelRef}
-      className={quickLook ? "zp-panel zp-panel--ql-hidden" : "zp-panel"}
+      className={shelfVisible ? "zp-panel" : "zp-panel zp-panel--ql-hidden"}
       onMouseDown={(e) => {
         const t = e.target;
         if (
@@ -400,14 +447,18 @@ export function ClipboardPanel() {
         boards={state.pinboards}
         activeBoard={activeBoard}
         query={query}
-        paused={paused}
         onBoardChange={setActiveBoard}
         onQueryChange={setQuery}
-        onTogglePause={() => void pauseCapture(paused ? null : 5 * 60_000)}
-        onLock={() => vault.lock()}
         onNewBoard={(rect) => setPinComposer({ anchor: { kind: "element", rect } })}
-        onSearchFocus={() => void setDesktopKeyboardFocus(true)}
-        onSearchBlur={() => void setDesktopKeyboardFocus(false)}
+        onBoardContextMenu={(board, x, y) => {
+          setMenu(null);
+          setBoardMenu({ x, y, boardId: board.id });
+        }}
+        onOpenAccount={() => {
+          setMenu(null);
+          setBoardMenu(null);
+          setAccountOpen(true);
+        }}
       />
 
       <div
@@ -466,8 +517,8 @@ export function ClipboardPanel() {
         ? createPortal(
             <div
               className={[
-                "zp-card zp-card--floating flex flex-col",
-                isCompact ? "h-[148px] w-[132px]" : "h-[220px] w-[200px]",
+                "zp-mcard zp-mcard--floating",
+                isCompact ? "zp-mcard--compact" : "",
               ].join(" ")}
               style={{
                 width: drag.width,
@@ -475,17 +526,15 @@ export function ClipboardPanel() {
                 transform: `translate3d(${drag.x}px, ${drag.y}px, 0)`,
               }}
             >
-              <ClipCardFace clip={dragClip} index={0} compact={isCompact} showIndex={false} />
+              <ClipCardFace clip={dragClip} compact={isCompact} />
             </div>,
             document.body,
           )
         : null}
 
       <footer className="zp-footer">
-        <span className="inline-flex items-center gap-2">
-          <Lock className="size-3 opacity-50" />
-          Vault unlocked · {clips.length} item{clips.length === 1 ? "" : "s"}
-          {paused ? " · Capture paused" : ""}
+        <span>
+          {clips.length} clip{clips.length === 1 ? "" : "s"}
         </span>
         <span className="zp-footer-hints">
           {sorting ? (
@@ -507,12 +556,40 @@ export function ClipboardPanel() {
         />
       ) : null}
 
+      {boardMenu && menuBoard ? (
+        <PinboardContextMenu
+          x={boardMenu.x}
+          y={boardMenu.y}
+          board={menuBoard}
+          onClose={() => setBoardMenu(null)}
+          onAction={(action) => onBoardMenuAction(menuBoard, action)}
+        />
+      ) : null}
+
       {pinComposer ? (
         <NewPinboardPopover
           anchor={pinComposer.anchor}
           pinClipTitle={composerPinClip?.title ?? null}
           onClose={() => setPinComposer(null)}
           onCreate={(name, color) => createBoard(name, color, pinComposer.pinClipId)}
+        />
+      ) : null}
+
+      {boardEditor ? (
+        <PinboardEditorPopover
+          board={boardEditor.board}
+          focus={boardEditor.focus}
+          anchor={boardEditor.anchor}
+          onClose={() => setBoardEditor(null)}
+          onSave={async (name, color) => {
+            const updated = await updatePinboard(boardEditor.board.id, { name, color });
+            if (!updated) {
+              toast.error("Could not update pinboard");
+              return;
+            }
+            toast.success(`Updated “${updated.name}”`);
+            setBoardEditor(null);
+          }}
         />
       ) : null}
 
@@ -527,5 +604,8 @@ export function ClipboardPanel() {
         />
       ) : null}
     </div>
+
+    <AccountSheet open={accountOpen} onClose={() => setAccountOpen(false)} />
+    </>
   );
 }

@@ -1,49 +1,41 @@
 /**
  * Electrobun's CLI cannot resolve `rcedit` (https://github.com/blackboardsh/electrobun/issues/429),
- * so Windows icons never embed. Brand PE binaries ourselves with the rcedit next to electrobun.
+ * so Windows icons never embed cleanly. Brand PE binaries ourselves.
+ *
+ * Important: plain `rcedit --set-icon` leaves Bun's original RT_GROUP_ICON around and
+ * reuses icon IDs, so the primary group can point at a 16×16 bitmap. Windows then
+ * upscales that for the taskbar → blurry icon.
+ *
+ * Strategy:
+ * 1) Prefer `resedit` (strip all icon resources, write one clean multi-size group).
+ * 2) Fall back to Win32 UpdateResource for large Electrobun `bun.exe` which pe-library
+ *    cannot parse (~100MB+ host binary).
  *
  * Hook order:
  * - postBuild  → brand launcher/bun inside the app bundle BEFORE tar.zst is created
  * - postPackage → brand ZeroPaste-Setup.exe after the extractor is written
  */
-import { existsSync, readdirSync, statSync, copyFileSync, unlinkSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
+import * as ResEdit from "resedit";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ico = join(root, "assets", "zeropaste.ico");
+const win32Script = join(root, "scripts", "win32-set-icon.ps1");
 
-function findRcedit(): string {
-  const candidates = [
-    join(root, "node_modules", "rcedit", "bin", "rcedit-x64.exe"),
-    join(root, "..", "..", "node_modules", "rcedit", "bin", "rcedit-x64.exe"),
-    join(
-      root,
-      "..",
-      "..",
-      "node_modules",
-      ".bun",
-      "rcedit@4.0.1",
-      "node_modules",
-      "rcedit",
-      "bin",
-      "rcedit-x64.exe",
-    ),
-  ];
-  for (const c of candidates) {
-    if (existsSync(c)) return c;
-  }
-  const bunMods = join(root, "..", "..", "node_modules", ".bun");
-  if (existsSync(bunMods)) {
-    for (const name of readdirSync(bunMods)) {
-      if (!name.startsWith("rcedit@")) continue;
-      const p = join(bunMods, name, "node_modules", "rcedit", "bin", "rcedit-x64.exe");
-      if (existsSync(p)) return p;
-    }
-  }
-  throw new Error("rcedit-x64.exe not found — run bun install");
-}
+/** RT_ICON / RT_GROUP_ICON */
+const RT_ICON = 3;
+const RT_GROUP_ICON = 14;
 
 function collectTargets(dir: string, out: string[] = []): string[] {
   if (!existsSync(dir)) return out;
@@ -62,7 +54,10 @@ function collectTargets(dir: string, out: string[] = []): string[] {
       continue;
     }
     const lower = name.toLowerCase();
-    // Only PE binaries — skip archives / metadata that happen to match name prefixes.
+    // Only PE binaries — skip archives / metadata / temp copies.
+    if (lower.includes(".prebrand") || lower.includes("bun-copy") || lower.includes(".branding.tmp")) {
+      continue;
+    }
     if (lower.endsWith(".exe") || lower === "launcher" || lower === "bun") {
       out.push(full);
     }
@@ -70,7 +65,86 @@ function collectTargets(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-function brand(exePath: string, rcedit: string) {
+/** Replace every icon resource with one clean multi-size ZeroPaste group (resedit). */
+function setCleanIconResedit(exePath: string, icoPath: string) {
+  const data = readFileSync(exePath);
+  const exe = ResEdit.NtExecutable.from(data, { ignoreCert: true });
+  const res = ResEdit.NtExecutableResource.from(exe);
+
+  for (let i = res.entries.length - 1; i >= 0; --i) {
+    const type = res.entries[i]?.type;
+    if (type === RT_ICON || type === RT_GROUP_ICON) {
+      res.entries.splice(i, 1);
+    }
+  }
+
+  const iconFile = ResEdit.Data.IconFile.from(readFileSync(icoPath));
+  ResEdit.Resource.IconGroupEntry.replaceIconsForResource(
+    res.entries,
+    1,
+    1033,
+    iconFile.icons.map((item) => item.data),
+  );
+
+  res.outputResource(exe);
+  const outPath = `${exePath}.branding.tmp`;
+  writeFileSync(outPath, Buffer.from(exe.generate()));
+  try {
+    copyFileSync(outPath, exePath);
+  } finally {
+    try {
+      unlinkSync(outPath);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/** Win32 UpdateResource path — required for Electrobun bun.exe. */
+function setCleanIconWin32(exePath: string, icoPath: string) {
+  if (!existsSync(win32Script)) {
+    throw new Error(`missing ${win32Script}`);
+  }
+  const r = spawnSync(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-WindowStyle",
+      "Hidden",
+      "-File",
+      win32Script,
+      "-ExePath",
+      exePath,
+      "-IcoPath",
+      icoPath,
+    ],
+    {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 120_000,
+    },
+  );
+  if (r.status !== 0) {
+    throw new Error(
+      `win32-set-icon failed (exit ${r.status}): ${(r.stderr || r.stdout || "").trim()}`,
+    );
+  }
+}
+
+function setCleanIcon(exePath: string, icoPath: string) {
+  try {
+    setCleanIconResedit(exePath, icoPath);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log(`[brand-icons] resedit unavailable for ${exePath} (${msg.split("\n")[0]}) — Win32 fallback`);
+    setCleanIconWin32(exePath, icoPath);
+  }
+}
+
+function brand(exePath: string) {
   let target = exePath;
   let tempExe: string | null = null;
   if (!target.toLowerCase().endsWith(".exe")) {
@@ -79,7 +153,7 @@ function brand(exePath: string, rcedit: string) {
     target = tempExe;
   }
   try {
-    execFileSync(rcedit, [target, "--set-icon", ico], { stdio: "pipe" });
+    setCleanIcon(target, ico);
     // Only force GUI on the long-running app binaries. The Electrobun Setup
     // extractor is a console app — GUI subsystem makes double-click do nothing.
     if (shouldForceGuiSubsystem(exePath)) {
@@ -113,7 +187,6 @@ function setWindowsGuiSubsystem(exePath: string) {
     const pe = buf.readUInt32LE(0x3c);
     if (pe + 24 + 70 > buf.length) return;
     if (buf.toString("ascii", pe, pe + 4) !== "PE\0\0") return;
-    // OptionalHeader.Subsystem is at PE+24+68 for PE32 and PE32+
     const subOff = pe + 24 + 68;
     const prev = buf.readUInt16LE(subOff);
     if (prev === 2) return; // already GUI
@@ -154,21 +227,18 @@ function main() {
     return;
   }
 
-  const rcedit = findRcedit();
-  console.log(`[brand-icons] using ${rcedit}`);
+  console.log(`[brand-icons] using resedit/Win32 + ${ico}`);
 
   const buildDir = process.env.ELECTROBUN_BUILD_DIR || join(root, "build");
   const targets = new Set(collectTargets(buildDir));
 
-  // Also catch artifacts folder Setup copies
   const artifactDir = process.env.ELECTROBUN_ARTIFACT_DIR;
   if (artifactDir) {
     for (const t of collectTargets(artifactDir)) targets.add(t);
   }
 
-  for (const t of targets) brand(t, rcedit);
+  for (const t of targets) brand(t);
 
-  // Repair any Setup extractors we may have GUI-patched in earlier builds.
   for (const t of targets) {
     const base = t.replace(/\\/g, "/").split("/").pop()?.toLowerCase() ?? "";
     if (base.includes("setup") && base.endsWith(".exe")) setWindowsConsoleSubsystem(t);

@@ -1,82 +1,105 @@
 "use client";
 
 import type { Pinboard } from "@paste/clipboard-core";
-import {
-  Cloud,
-  CloudOff,
-  GripHorizontal,
-  Loader2,
-  Lock,
-  Pause,
-  Play,
-  Plus,
-  Search,
-  User,
-} from "lucide-react";
-import Link from "next/link";
-import { useMemo, useRef } from "react";
+import { Cloud, CloudOff, GripHorizontal, Loader2, Plus, RefreshCw, Search, User } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 
 import { WindowCloseButton } from "@/components/window-close-button";
 import { useSyncStatus } from "@/components/vault/sync-status";
 import { useAuth } from "@/lib/auth-session";
+import { setDesktopKeyboardFocus } from "@/lib/bridge";
 import { windowDragHandlers } from "@/lib/window-drag";
+
+import { SyncStatusPopover } from "./sync-status-popover";
 
 type Props = {
   boards: Pinboard[];
   activeBoard: string;
   query: string;
-  paused: boolean;
   onBoardChange: (id: string) => void;
   onQueryChange: (q: string) => void;
-  onTogglePause: () => void;
-  onLock?: () => void;
   onNewBoard?: (anchorRect: DOMRect) => void;
-  onSearchFocus?: () => void;
-  onSearchBlur?: () => void;
+  onOpenAccount?: () => void;
+  onBoardContextMenu?: (board: Pinboard, clientX: number, clientY: number) => void;
 };
 
 export function PanelToolbar({
   boards,
   activeBoard,
   query,
-  paused,
   onBoardChange,
   onQueryChange,
-  onTogglePause,
-  onLock,
   onNewBoard,
-  onSearchFocus,
-  onSearchBlur,
+  onOpenAccount,
+  onBoardContextMenu,
 }: Props) {
   const drag = useMemo(() => windowDragHandlers(), []);
   const auth = useAuth();
-  const { phase, detail } = useSyncStatus();
+  const { phase, detail, refreshFromCloud } = useSyncStatus();
   const signedIn = Boolean(auth.session);
   const offline = auth.offlineChosen || !auth.configured;
   const pulling = phase === "pulling";
+  const canRefresh = signedIn && !offline && auth.configured;
+  const addRef = useRef<HTMLButtonElement>(null);
+  const cloudRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const blurTimer = useRef<number | null>(null);
+  /** Host is clearing NOACTIVATE / activating — ignore blur from that dance. */
+  const armingRef = useRef(false);
+  /** Host already in typing mode; skip re-activate loops from our own refocus. */
+  const typingRef = useRef(false);
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [syncAnchor, setSyncAnchor] = useState<DOMRect | null>(null);
+  const customBoards = boards.filter((b) => b.id !== "history");
+
   const cloudTitle = pulling
     ? (detail ?? "Restoring from cloud…")
     : phase === "error"
       ? (detail ?? "Cloud sync error")
       : phase === "synced"
-        ? (detail ?? "Cloud sync ready")
+        ? (detail ?? "Everything synced")
         : signedIn
-          ? `Signed in as ${auth.session?.user.email ?? "account"}`
+          ? "Cloud sync status"
           : offline
-            ? "Account — offline / sync off"
-            : "Sign in for cloud sync";
-  const addRef = useRef<HTMLButtonElement>(null);
-  const customBoards = boards.filter((b) => b.id !== "history");
+            ? "Sync off — this device only"
+            : "Not signed in";
+
+  const focusSearch = () => {
+    if (blurTimer.current) {
+      window.clearTimeout(blurTimer.current);
+      blurTimer.current = null;
+    }
+    if (armingRef.current || typingRef.current) return;
+    armingRef.current = true;
+    void setDesktopKeyboardFocus(true)
+      .then(() => {
+        typingRef.current = true;
+        // Host activate() can bounce DOM focus — put it back on the input.
+        searchRef.current?.focus({ preventScroll: true });
+      })
+      .finally(() => {
+        armingRef.current = false;
+      });
+  };
+
+  const blurSearch = () => {
+    if (armingRef.current) return;
+    if (blurTimer.current) window.clearTimeout(blurTimer.current);
+    blurTimer.current = window.setTimeout(() => {
+      blurTimer.current = null;
+      if (armingRef.current) return;
+      const el = searchRef.current;
+      if (el && document.activeElement === el) return;
+      if (el?.closest(".zp-search")?.contains(document.activeElement)) return;
+      typingRef.current = false;
+      void setDesktopKeyboardFocus(false);
+    }, 400);
+  };
 
   return (
     <header className="zp-toolbar">
       <div className="zp-drag-strip" title="Drag to move" {...drag}>
         <GripHorizontal className="size-3.5 opacity-45" />
-      </div>
-
-      <div className="zp-brand" {...drag}>
-        <span className="zp-brand-mark" aria-hidden />
-        <span className="zp-brand-name">ZeroPaste</span>
       </div>
 
       <nav className="zp-boards" aria-label="Pinboards">
@@ -93,6 +116,11 @@ export function PanelToolbar({
             type="button"
             className={activeBoard === b.id ? "zp-board zp-board--active" : "zp-board"}
             onClick={() => onBoardChange(b.id)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onBoardContextMenu?.(b, e.clientX, e.clientY);
+            }}
           >
             <span className="zp-board-dot" style={{ background: b.color }} />
             {b.name}
@@ -118,58 +146,79 @@ export function PanelToolbar({
         <label className="zp-search">
           <Search className="size-3.5 opacity-50" />
           <input
+            ref={searchRef}
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
-            placeholder="Search titles, content, apps…"
+            placeholder="Search"
             spellCheck={false}
             onMouseDown={(e) => {
-              // Clear NOACTIVATE before this click finishes so the input can type.
               e.stopPropagation();
-              onSearchFocus?.();
+              focusSearch();
             }}
-            onFocus={() => onSearchFocus?.()}
-            onBlur={() => onSearchBlur?.()}
+            onFocus={focusSearch}
+            onBlur={blurSearch}
           />
         </label>
-        <Link
-          href="/account"
+        <button
+          type="button"
+          className="zp-icon-btn"
+          title={
+            canRefresh
+              ? pulling
+                ? "Refreshing from cloud…"
+                : "Refresh from cloud"
+              : "Sign in to refresh from cloud"
+          }
+          aria-label="Refresh from cloud"
+          disabled={!canRefresh || pulling}
+          onClick={() => void refreshFromCloud()}
+        >
+          <RefreshCw className={`size-4${pulling ? " animate-spin" : ""}`} aria-hidden />
+        </button>
+        <button
+          ref={cloudRef}
+          type="button"
           className="zp-icon-btn"
           title={cloudTitle}
-          aria-label={pulling ? "Restoring from cloud" : "Account and sync"}
+          aria-label="Cloud sync status"
+          aria-expanded={syncOpen}
+          onClick={() => {
+            const rect = cloudRef.current?.getBoundingClientRect();
+            if (rect) setSyncAnchor(rect);
+            setSyncOpen((v) => !v);
+          }}
         >
           {pulling ? (
             <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : phase === "synced" ? (
+            <Cloud className="size-4 text-emerald-400" />
           ) : signedIn ? (
             <Cloud className={`size-4${phase === "error" ? " text-red-400" : ""}`} />
           ) : (
             <CloudOff className="size-4 opacity-70" />
           )}
-        </Link>
-        <Link href="/account" className="zp-icon-btn" title="Account" aria-label="Account">
-          <User className="size-4" />
-        </Link>
+        </button>
         <button
           type="button"
           className="zp-icon-btn"
-          onClick={onTogglePause}
-          title={paused ? "Resume capture" : "Pause capture"}
-          aria-pressed={paused}
+          title="Account"
+          aria-label="Account"
+          onClick={() => onOpenAccount?.()}
         >
-          {paused ? <Play className="size-4" /> : <Pause className="size-4" />}
+          <User className="size-4" />
         </button>
-        {onLock ? (
-          <button
-            type="button"
-            className="zp-icon-btn"
-            title="Lock vault"
-            aria-label="Lock vault"
-            onClick={onLock}
-          >
-            <Lock className="size-4" />
-          </button>
-        ) : null}
         <WindowCloseButton className="zp-icon-btn" title="Close" />
       </div>
+
+      {syncOpen && syncAnchor ? (
+        <SyncStatusPopover
+          anchorRect={syncAnchor}
+          onClose={() => {
+            setSyncOpen(false);
+            setSyncAnchor(null);
+          }}
+        />
+      ) : null}
     </header>
   );
 }

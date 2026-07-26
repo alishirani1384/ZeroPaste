@@ -1,5 +1,6 @@
 import { Screen, type BrowserWindow } from "electrobun/bun";
 
+import { isKeyboardFocusActive } from "./keyboard-focus";
 import { applyNoActivateByTitle, clearNoActivateByTitle } from "./noactivate";
 import { setNativeWindowFrame } from "./win32-frame";
 
@@ -7,7 +8,7 @@ export type WindowMode = "panel" | "vault";
 export type FitAnchor = "bottom-center" | "center";
 
 /** Bump when host logic changes — must appear in Electrobun terminal + /health. */
-export const HOST_BUILD = "zeropaste-host-2026-07-22-uninstallfix";
+export const HOST_BUILD = "zeropaste-host-2026-07-26-search-focus";
 
 /**
  * WebView2 + transparent: hit-testing stays bound to the *create* size
@@ -20,7 +21,7 @@ export const HOST_BUILD = "zeropaste-host-2026-07-22-uninstallfix";
  * 3. placeWindow only repositions — never owns width/height
  */
 export const SHELF_W = 1100;
-export const SHELF_H = 320;
+export const SHELF_H = 340;
 export const QL_W = 920;
 export const QL_H = 520;
 
@@ -263,8 +264,19 @@ export function placeWindow(next: WindowMode) {
     } catch (e) {
       console.warn("[ZeroPaste] placeWindow setPosition failed", e);
     }
-    if (next === "panel") void applyNoActivateByTitle();
-    else void clearNoActivateByTitle();
+    // Never re-arm NOACTIVATE while search/editors hold keyboard focus.
+    if (next === "panel" && !isKeyboardFocusActive()) void applyNoActivateByTitle();
+    else if (next !== "panel") {
+      // Vault / account: allow focus via Electrobun (no PowerShell focus capture).
+      void clearNoActivateByTitle().then(() => {
+        try {
+          win.show();
+          win.activate();
+        } catch {
+          /* ignore */
+        }
+      });
+    }
   }, 16);
 }
 
@@ -291,8 +303,9 @@ export function fitWindow(opts: {
     fitTimer = null;
     const frame = framePreservingPlacement(size, opts.anchor);
     applyFrame(frame, `fit:${opts.anchor}`);
-    if (mode === "panel") void applyNoActivateByTitle();
-    else void clearNoActivateByTitle();
+    // Never re-arm NOACTIVATE while search/editors hold keyboard focus.
+    if (mode === "panel" && !isKeyboardFocusActive()) void applyNoActivateByTitle();
+    else if (mode !== "panel") void clearNoActivateByTitle();
   }, 16);
 }
 

@@ -113,6 +113,8 @@ async function writeWindowsAutostartVbs(launchPath: string): Promise<string> {
   return vbsPath;
 }
 
+const hideWin = { windowsHide: true } as const;
+
 async function enableWindows(launchPath: string): Promise<void> {
   const vbsPath = await writeWindowsAutostartVbs(launchPath);
   // Prefer wscript so no console is allocated for the wrapper itself.
@@ -130,7 +132,7 @@ async function enableWindows(launchPath: string): Promise<void> {
       value,
       "/f",
     ],
-    { stdout: "ignore", stderr: "pipe" },
+    { stdout: "ignore", stderr: "pipe", ...hideWin } as Parameters<typeof Bun.spawn>[1],
   );
   const code = await proc.exited;
   if (code !== 0) {
@@ -149,7 +151,7 @@ async function disableWindows(): Promise<void> {
       RUN_VALUE,
       "/f",
     ],
-    { stdout: "ignore", stderr: "ignore" },
+    { stdout: "ignore", stderr: "ignore", ...hideWin } as Parameters<typeof Bun.spawn>[1],
   );
   await proc.exited; // ok if missing
   try {
@@ -163,7 +165,10 @@ async function disableWindows(): Promise<void> {
   }
 }
 
+/** Prefer pref file — never spawn `reg.exe` on Account open (console flash). */
 async function isEnabledWindows(): Promise<boolean> {
+  const pref = await readPref();
+  if (pref) return pref.enabled;
   const proc = Bun.spawn(
     [
       "reg",
@@ -172,7 +177,7 @@ async function isEnabledWindows(): Promise<boolean> {
       "/v",
       RUN_VALUE,
     ],
-    { stdout: "pipe", stderr: "ignore" },
+    { stdout: "ignore", stderr: "ignore", ...hideWin } as Parameters<typeof Bun.spawn>[1],
   );
   return (await proc.exited) === 0;
 }

@@ -187,6 +187,37 @@ export async function createPinboard(name: string, color?: string): Promise<Pinb
   }
 }
 
+export async function updatePinboard(
+  id: string,
+  patch: { name?: string; color?: string },
+): Promise<Pinboard | null> {
+  try {
+    const res = await fetch(`${BRIDGE}/pinboard-update`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...patch }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { board?: Pinboard };
+    return data.board ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function deletePinboard(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BRIDGE}/pinboard-delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function pinClipToBoard(clipId: string, boardId: string) {
   try {
     await fetch(`${BRIDGE}/pin-clip`, {

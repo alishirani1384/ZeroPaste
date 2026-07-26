@@ -1,5 +1,17 @@
 # ZeroPaste packaging (Windows / Linux)
 
+## CI release (GitHub Actions)
+
+Workflow: [`.github/workflows/release.yml`](../../.github/workflows/release.yml)
+
+1. Bump `version` in `apps/desktop/package.json` (and/or `apps/native/package.json`)
+2. Push to `main`
+3. CI publishes only apps whose version **changed** in that push  
+   - Desktop → tag `desktop-vX.Y.Z` + Setup zip  
+   - Android → tag `android-vX.Y.Z` + APK  
+
+Manual: Actions → **Release** → Run workflow → force Android/Desktop.
+
 ## What to send someone (Windows)
 
 **Do not send only `ZeroPaste-Setup.exe` (≈0.4 MB).**  
@@ -10,30 +22,44 @@ Send the zip from artifacts:
 
 `apps/desktop/artifacts/stable-win-x64-ZeroPaste-Setup.zip`
 
-It contains everything the recipient needs.
+It contains everything the recipient needs. After unzipping, they should run
+**`Install ZeroPaste.exe`** (not Setup alone) — that runs Electrobun’s extractor,
+then launches ZeroPaste automatically when install finishes.
 
-### Or send these two files together
+Zip layout:
+
+| Path | Role |
+|---|---|
+| `Install ZeroPaste.exe` | **Double-click this** — install + auto-launch |
+| `ZeroPaste-Setup.exe` | Electrobun extractor (called by the wrapper) |
+| `.installer/ZeroPaste-Setup.tar.zst` | App payload |
+| `.installer/ZeroPaste-Setup.metadata.json` | Channel / identity |
+
+### Or send these files together
 From `apps/desktop/build/stable-win-x64/`:
 
-1. `ZeroPaste-Setup.exe`
-2. `ZeroPaste-Setup.tar.zst` (**required**, ~275 MB)
+1. `Install ZeroPaste.exe` (recommended entry point)
+2. `ZeroPaste-Setup.exe`
+3. `ZeroPaste-Setup.tar.zst` (or the `.installer/` folder from the zip)
 
-They must stay in the **same folder** when the user runs the Setup exe.
+`Install ZeroPaste.exe` and Setup must stay next to the archive / `.installer` folder.
 
 ## Why it looks like a console extractor (not Electron NSIS)
 
 Electrobun’s default Windows “installer” is **not** an Electron-style wizard. It is:
 
 1. A small extractor EXE (opens a console briefly)
-2. A `.tar.zst` archive next to it
-3. Extract → install/run
+2. A `.tar.zst` archive (usually under `.installer/`)
+3. Extract → shortcuts — **does not** start the app by itself
 
-That is expected for stock Electrobun (`electrobun build --env=stable`).
-A brief console window during extract is normal for `ZeroPaste-Setup.exe`.
+`Install ZeroPaste.exe` (built in `postPackage`) wraps that flow and starts
+`launcher.exe` when extract finishes. That is expected for stock Electrobun
+(`electrobun build --env=stable`). A brief console window during extract is
+normal for `ZeroPaste-Setup.exe`.
 
-**If Setup.exe does nothing when double-clicked:** it must stay next to
-`ZeroPaste-Setup.tar.zst`, and it must remain a **console** binary. Do not
-force GUI subsystem on Setup (only on `launcher.exe` / `bun.exe`).
+**If Setup.exe does nothing when double-clicked:** keep the `.installer` folder
+(or adjacent `.tar.zst`) next to it, and keep Setup a **console** binary. Do not
+force GUI subsystem on Setup (only on `launcher.exe` / `bun.exe` / the Install wrapper).
 
 For a classic **NSIS / MSI** installer, use a third-party packager such as  
 [electrobun-builder-for-windows](https://github.com/Catharacta/electrobun-builder) after the Electrobun build.
@@ -99,7 +125,7 @@ build.linux.icon = "assets/zeropaste.png"
 ```
 
 Electrobun itself often fails to embed icons (`rcedit` resolve bug [#429](https://github.com/blackboardsh/electrobun/issues/429)).  
-We run `scripts/brand-windows-icons.ts` on **postBuild** + **postPackage** to force-embed the logo.
+We run `scripts/brand-windows-icons.ts` on **postBuild** + **postPackage** to force-embed the logo via **resedit** (strip all `RT_ICON` / `RT_GROUP_ICON`, then write one clean multi-size group). Plain `rcedit --set-icon` left Bun’s primary group pointing at 16×16 → blurry taskbar.
 
 `assets/zeropaste.ico` must be a **multi-size** ICO (16–256). A single 48px frame looks fine in the tray overflow but pixelates on the taskbar (HiDPI upscale). Regenerate from the master PNG:
 

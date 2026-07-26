@@ -10,8 +10,8 @@ import { join } from "node:path";
 import { startBridgeServer } from "./bridge-server";
 import { startClipboardPoller } from "./clipboard-poller";
 import { isAutostartLaunch } from "./autostart";
-import { captureFocusTarget, captureFocusTargetIfExternal } from "./focus-target";
-import { registerKeyboardFocus } from "./keyboard-focus";
+import { captureFocusTarget } from "./focus-target";
+import { isKeyboardFocusActive, registerKeyboardFocus } from "./keyboard-focus";
 import { applyNoActivateByTitle, clearNoActivateByTitle } from "./noactivate";
 import { registerPanelVisibility } from "./panel-visibility";
 import { commandExists, getDisplayServer, logLinuxPasteEnvironment } from "./platform/session";
@@ -199,9 +199,11 @@ registerPanelVisibility({ hide: hidePanel, show: () => void showPanel() });
 
 registerKeyboardFocus({
   enable: async () => {
-    // Remember the caret app before we steal focus for typing.
-    await captureFocusTargetIfExternal();
+    // Caret app was already captured in showPanel(). Do NOT await PowerShell
+    // capture here — a slow await races the search blur handler, which calls
+    // showInactive and steals focus after ~0.5–1s.
     await clearNoActivateByTitle();
+    if (!isKeyboardFocusActive()) return;
     try {
       win.show();
       win.activate();
@@ -213,6 +215,8 @@ registerKeyboardFocus({
     // Always re-arm NOACTIVATE in panel mode so clicks don't keep stealing focus.
     if (getWindowMode() !== "panel") return;
     await applyNoActivateByTitle();
+    // Enable may have won while we awaited styles — do not showInactive then.
+    if (isKeyboardFocusActive()) return;
     try {
       win.showInactive();
     } catch {

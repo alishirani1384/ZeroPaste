@@ -2,6 +2,7 @@
   "name": "desktop",
   "private": true,
   "type": "module",
+  "version": "1.0.0",
   "scripts": {
     "start": "electrobun dev",
     "dev:hmr": "concurrently -k -n web,desktop -c cyan,magenta \"bun run hmr\" \"electrobun dev --watch\"",
@@ -21,6 +22,7 @@
     "@types/three": "^0.165.0",
     "concurrently": "^10.0.3",
     "electrobun-builder-for-windows": "0.3.7",
+    "resedit": "^3.0.2",
     "typescript": "^6"
   }
 }

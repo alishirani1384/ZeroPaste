@@ -1,6 +1,6 @@
 {
   "name": "web",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev --port 3001",
@@ -21,6 +21,8 @@
     "@swc/helpers": "^0.5.23",
     "babel-plugin-react-compiler": "^1.0.0",
     "dotenv": "catalog:",
+    "highlight.js": "^11.11.1",
+    "lowlight": "^3.3.0",
     "lucide-react": "catalog:",
     "next": "^16.2.0",
     "next-themes": "catalog:",

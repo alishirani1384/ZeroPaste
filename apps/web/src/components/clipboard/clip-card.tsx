@@ -1,91 +1,226 @@
 ﻿"use client";
 
 import type { ClipItem } from "@paste/clipboard-core";
-import { formatRelativeTime } from "@paste/clipboard-core";
-import { Code2, FileText, ImageIcon, Link2, Palette } from "lucide-react";
+import { contrastingInk, paintColorForNative } from "@paste/clipboard-core";
+import { Cloud, CloudOff, Smartphone } from "lucide-react";
 import { useState, type PointerEvent as ReactPointerEvent } from "react";
 
-const kindIcon = {
-  text: FileText,
-  link: Link2,
-  image: ImageIcon,
-  code: Code2,
-  file: FileText,
-  color: Palette,
-  other: FileText,
-} as const;
+import { CodeHighlight } from "@/components/clipboard/code-highlight";
+import { useSyncStatus } from "@/components/vault/sync-status";
+import { useLinkPreview } from "@/hooks/use-link-preview";
+import { useAuth } from "@/lib/auth-session";
+import {
+  TYPE_ICON_SRC,
+  characterCountLabel,
+  detectCodeLanguage,
+  imageSizeLabel,
+  kindChrome,
+  linkPathLabel,
+  pasteRelativeTime,
+} from "@/lib/clip-card-meta";
 
-export function ClipCardFace({
-  clip,
-  index,
-  compact,
-  showIndex = true,
+function cloudBadgeFor(
+  phase: string,
+  offline: boolean,
+  signedIn: boolean,
+): "synced" | "local_only" | "pending" {
+  if (offline || !signedIn) return "local_only";
+  if (phase === "synced") return "synced";
+  return "pending";
+}
+
+function CloudBadge({
+  badge,
+  onDark,
 }: {
-  clip: ClipItem;
-  index: number;
-  compact: boolean;
-  showIndex?: boolean;
+  badge: "synced" | "local_only" | "pending";
+  onDark?: boolean;
 }) {
-  const Icon = kindIcon[clip.kind];
-  const quick = showIndex && index < 9 ? index + 1 : null;
-  const [imgFailed, setImgFailed] = useState(false);
-  const imageSrc = clip.preview || clip.body;
+  const Icon = badge === "synced" ? Cloud : badge === "local_only" ? Smartphone : CloudOff;
+  const color =
+    badge === "synced"
+      ? "#34C759"
+      : badge === "local_only"
+        ? "#FF9F0A"
+        : onDark
+          ? "rgba(255,255,255,0.7)"
+          : "#8E8E93";
 
   return (
-    <>
-      {quick !== null ? <span className="zp-quick" aria-hidden>{`#${quick}`}</span> : null}
+    <div
+      className={["zp-mcard-cloud", onDark ? "zp-mcard-cloud--dark" : "zp-mcard-cloud--light"].join(
+        " ",
+      )}
+      aria-hidden
+    >
+      <Icon className="size-3.5" style={{ color }} strokeWidth={2.25} />
+    </div>
+  );
+}
 
-      <div className={["zp-card-preview", compact ? "min-h-0 flex-1" : "h-[132px]"].join(" ")}>
-        {clip.kind === "image" ? (
-          imgFailed || !imageSrc ? (
-            <div className="zp-image-fallback">
-              <ImageIcon className="size-8 opacity-40" />
-              <span>Image</span>
-              <span className="opacity-60">{Math.round(clip.byteSize / 1024)} KB</span>
-            </div>
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={imageSrc}
-              src={imageSrc}
-              alt=""
-              className="h-full w-full object-cover pointer-events-none"
-              draggable={false}
-              onError={() => setImgFailed(true)}
-              onLoad={() => setImgFailed(false)}
-            />
-          )
-        ) : clip.kind === "color" ? (
-          <div className="flex h-full w-full items-end p-3" style={{ background: clip.body }}>
-            <span className="rounded bg-black/35 px-2 py-0.5 font-mono text-[11px] text-white">
-              {clip.body}
-            </span>
-          </div>
-        ) : clip.kind === "code" ? (
-          <pre className="zp-code">{clip.preview}</pre>
-        ) : clip.kind === "link" ? (
-          <div className="flex h-full flex-col justify-between p-3">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-[var(--zp-link-wash)] text-[var(--zp-crimson)]">
-              <Link2 className="size-4" />
-            </div>
-            <p className="line-clamp-3 text-[13px] leading-snug text-[var(--zp-ink)]">{clip.preview}</p>
-          </div>
-        ) : (
-          <p className="zp-text-preview">{clip.preview}</p>
-        )}
+function KindTypeIcon({ kind }: { kind: ClipItem["kind"] }) {
+  const src = TYPE_ICON_SRC[kind] ?? TYPE_ICON_SRC.text!;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img className="zp-mcard-type" src={src} alt="" draggable={false} />
+  );
+}
+
+function LinkBody({ clip }: { clip: ClipItem }) {
+  const { preview } = useLinkPreview(clip.body, true);
+  const title = preview?.title?.trim() || clip.title;
+  const image = preview?.image;
+  const path = linkPathLabel(clip.body);
+  const [imgFailed, setImgFailed] = useState(false);
+
+  return (
+    <div className="zp-mcard-link">
+      {image && !imgFailed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={image}
+          alt=""
+          className="zp-mcard-link-image"
+          draggable={false}
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <div className="zp-mcard-link-fallback">
+          <span>{path}</span>
+        </div>
+      )}
+      <div className="zp-mcard-link-foot">
+        <p className="zp-mcard-link-title">{title}</p>
+        <p className="zp-mcard-link-url">{path}</p>
+      </div>
+    </div>
+  );
+}
+
+function TextBody({ clip }: { clip: ClipItem }) {
+  const body = clip.body || clip.preview || "";
+  return (
+    <div className="zp-mcard-text">
+      <div className="zp-mcard-text-pad">
+        <p className="zp-mcard-text-content">{body}</p>
+        <div className="zp-mcard-text-fade" aria-hidden />
+      </div>
+      <p className="zp-mcard-chars">{characterCountLabel(body)}</p>
+    </div>
+  );
+}
+
+function ImageBody({ clip }: { clip: ClipItem }) {
+  const [failed, setFailed] = useState(false);
+  const src = clip.preview || clip.body;
+  const label = imageSizeLabel(clip.imageWidth, clip.imageHeight);
+
+  return (
+    <div className="zp-mcard-image">
+      {src && !failed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt=""
+          className="zp-mcard-image-fill"
+          draggable={false}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="zp-mcard-image-missing">Image</div>
+      )}
+      {label ? (
+        <div className="zp-mcard-size-wrap">
+          <span className="zp-mcard-size">{label}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CodeBody({ clip }: { clip: ClipItem }) {
+  const code = clip.body || clip.preview || "";
+  const { label } = detectCodeLanguage(code, clip.language);
+  return (
+    <div className="zp-mcard-code">
+      <CodeHighlight code={code} language={clip.language} maxLines={9} className="zp-mcard-code-pad" />
+      <p className="zp-mcard-lang">{label}</p>
+    </div>
+  );
+}
+
+function ColorBody({ clip }: { clip: ClipItem }) {
+  const raw = (clip.body || clip.preview || "").trim();
+  const paint = paintColorForNative(raw);
+  const ink = paint ? contrastingInk(paint) : "#1C1C1E";
+
+  return (
+    <div
+      className={["zp-mcard-color", paint ? "" : "zp-mcard-color--fallback"].join(" ")}
+      style={paint ? { backgroundColor: paint } : undefined}
+    >
+      <span
+        className="zp-mcard-color-label"
+        style={{
+          color: ink,
+          backgroundColor: paint ? "rgba(0,0,0,0.22)" : "transparent",
+        }}
+      >
+        {raw}
+      </span>
+    </div>
+  );
+}
+
+function FileBody({ clip }: { clip: ClipItem }) {
+  return (
+    <div className="zp-mcard-file">
+      <p className="zp-mcard-file-title">{clip.title || clip.preview}</p>
+    </div>
+  );
+}
+
+/** Visual face — used by shelf cards and the drag ghost. */
+export function ClipCardFace({
+  clip,
+  compact,
+}: {
+  clip: ClipItem;
+  compact: boolean;
+}) {
+  const chrome = kindChrome(clip.kind);
+  const when = pasteRelativeTime(clip.createdAt);
+  const auth = useAuth();
+  const { phase } = useSyncStatus();
+  const badge = cloudBadgeFor(
+    phase,
+    auth.offlineChosen || !auth.configured,
+    Boolean(auth.session),
+  );
+  const onDark = clip.kind === "image" || clip.kind === "code" || clip.kind === "color";
+
+  return (
+    <div className={["zp-mcard-face", compact ? "zp-mcard-face--compact" : ""].join(" ")}>
+      <div className="zp-mcard-header" style={{ backgroundColor: chrome.header }}>
+        <div className="zp-mcard-header-text">
+          <span className="zp-mcard-kind">{chrome.label}</span>
+          <span className="zp-mcard-when">{when}</span>
+        </div>
+        <div className="zp-mcard-type-wrap">
+          <KindTypeIcon kind={clip.kind} />
+        </div>
       </div>
 
-      <div className="zp-card-meta">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <Icon className="size-3.5 shrink-0 opacity-55" />
-          <span className="truncate text-[12px] font-medium text-[var(--zp-ink)]">{clip.title}</span>
-        </div>
-        <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-[var(--zp-muted)]">
-          <span className="truncate">{clip.source.appName}</span>
-          <span className="shrink-0 tabular-nums">{formatRelativeTime(clip.createdAt)}</span>
-        </div>
+      <div className="zp-mcard-body">
+        {clip.kind === "link" ? <LinkBody clip={clip} /> : null}
+        {clip.kind === "text" || clip.kind === "other" ? <TextBody clip={clip} /> : null}
+        {clip.kind === "image" ? <ImageBody clip={clip} /> : null}
+        {clip.kind === "code" ? <CodeBody clip={clip} /> : null}
+        {clip.kind === "color" ? <ColorBody clip={clip} /> : null}
+        {clip.kind === "file" ? <FileBody clip={clip} /> : null}
+        <CloudBadge badge={badge} onDark={onDark} />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -129,14 +264,14 @@ export function ClipCard({
         }
       }}
       className={[
-        "zp-card group relative flex shrink-0 flex-col overflow-hidden text-left outline-none cursor-grab active:cursor-grabbing select-none touch-none",
-        compact ? "h-[148px] w-[132px]" : "h-[220px] w-[200px]",
-        selected && !sorting ? "zp-card--selected" : "",
+        "zp-mcard",
+        compact ? "zp-mcard--compact" : "",
+        selected && !sorting ? "zp-mcard--selected" : "",
       ].join(" ")}
       aria-selected={selected}
       title="Click to paste · drag to reorder · right-click for more"
     >
-      <ClipCardFace clip={clip} index={index} compact={compact} showIndex={!sorting} />
+      <ClipCardFace clip={clip} compact={compact} />
     </div>
   );
 }

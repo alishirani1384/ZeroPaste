@@ -6,9 +6,11 @@ import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { CodeHighlight } from "@/components/clipboard/code-highlight";
 import { useDesktopWindowFit } from "@/components/desktop-window-fit";
 import { fitDesktopWindow } from "@/lib/window-fit";
 import { setDesktopKeyboardFocus } from "@/lib/bridge";
+import { detectCodeLanguage } from "@/lib/clip-card-meta";
 
 type Props = {
   clip: ClipItem;
@@ -26,6 +28,7 @@ export function QuickLook({ clip, onClose, onSave }: Props) {
   const [saving, setSaving] = useState(false);
   const [mounted, setMounted] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
+  const codeHlRef = useRef<HTMLDivElement>(null);
   const dirty = editable && draft !== clip.body;
 
   useEffect(() => setMounted(true), []);
@@ -110,12 +113,41 @@ export function QuickLook({ clip, onClose, onSave }: Props) {
             <div className="zp-ql-color" style={{ background: clip.body }}>
               <span>{clip.body}</span>
             </div>
+          ) : clip.kind === "code" ? (
+            <div className="zp-ql-code">
+              <div className="zp-ql-code-hl" ref={codeHlRef} aria-hidden>
+                <CodeHighlight
+                  code={draft}
+                  language={clip.language ?? detectCodeLanguage(draft).id}
+                  maxLines={null}
+                  className="zp-ql-code-pad"
+                />
+              </div>
+              <textarea
+                className="zp-ql-editor zp-ql-editor--code zp-ql-editor--overlay"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                spellCheck={false}
+                aria-label="Edit code"
+                onScroll={(e) => {
+                  const hl = codeHlRef.current;
+                  if (!hl) return;
+                  hl.scrollTop = e.currentTarget.scrollTop;
+                  hl.scrollLeft = e.currentTarget.scrollLeft;
+                }}
+                onFocus={() => void setDesktopKeyboardFocus(true)}
+                onBlur={() => void setDesktopKeyboardFocus(false)}
+              />
+              <span className="zp-ql-code-lang">
+                {detectCodeLanguage(draft, clip.language).label}
+              </span>
+            </div>
           ) : editable ? (
             <textarea
-              className={clip.kind === "code" ? "zp-ql-editor zp-ql-editor--code" : "zp-ql-editor"}
+              className="zp-ql-editor"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              spellCheck={clip.kind !== "code"}
+              spellCheck
               aria-label="Edit clip"
               onFocus={() => void setDesktopKeyboardFocus(true)}
               onBlur={() => void setDesktopKeyboardFocus(false)}

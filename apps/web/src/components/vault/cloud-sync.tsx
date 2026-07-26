@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/lib/auth-session";
@@ -33,7 +33,7 @@ const pulledUsers = new Set<string>();
 export function CloudSync() {
   const { vaultKey, unlocked, recoveryKeyOnce } = useVault();
   const auth = useAuth();
-  const { setPhase } = useSyncStatus();
+  const { setPhase, registerRefreshHandler } = useSyncStatus();
   const userId = auth.session?.user?.id ?? null;
 
   const seenRef = useRef<Set<string>>(new Set());
@@ -43,9 +43,140 @@ export function CloudSync() {
   const pulledRef = useRef(false);
   const signedOutWarned = useRef(false);
   const skipToastOnce = useRef(false);
+  const pullInFlight = useRef(false);
+  const vaultKeyRef = useRef(vaultKey);
+  const userIdRef = useRef(userId);
+
+  vaultKeyRef.current = vaultKey;
+  userIdRef.current = userId;
 
   // Shelf-ready: unlocked and past the recovery-key screen
   const shelfReady = unlocked && !recoveryKeyOnce && !!vaultKey;
+
+  const pullFromCloud = useCallback(
+    async (opts: { reason: "initial" | "manual" }) => {
+      const key = vaultKeyRef.current;
+      const uid = userIdRef.current;
+      if (!key || !uid) {
+        if (opts.reason === "manual") {
+          toast.message("Sign in to refresh from the cloud", { duration: 2800 });
+        }
+        return;
+      }
+      if (pullInFlight.current) return;
+      pullInFlight.current = true;
+
+      const busyLabel = opts.reason === "manual" ? "Checking cloud…" : "Restoring from cloud…";
+      setPhase("pulling", busyLabel);
+      let toastId: string | number | undefined;
+
+      try {
+        void tryRegisterDevice();
+
+        const beforeIds = new Set(seenRef.current);
+        const beforeHashes = new Map(bodyHashRef.current);
+
+        const [remote, remoteBoards] = await Promise.all([
+          tryPullEncryptedClips(key),
+          tryPullEncryptedPinboards(key),
+        ]);
+
+        pulledRef.current = true;
+        pulledUsers.add(uid);
+
+        for (const c of remote) {
+          seenRef.current.add(c.id);
+          bodyHashRef.current.set(c.id, c.contentHash);
+          if (c.deletedAt) deletedPushRef.current.add(c.id);
+        }
+        for (const b of remoteBoards) {
+          pinboardSeenRef.current.add(b.id);
+        }
+
+        if (remoteBoards.length > 0) {
+          await mergePinboardsFromCloud(remoteBoards);
+        }
+
+        // Upload any local custom boards that are not yet in the cloud.
+        const local = await fetchBridgeState();
+        for (const board of local?.pinboards ?? []) {
+          if (board.id === "history" || pinboardSeenRef.current.has(board.id)) continue;
+          pinboardSeenRef.current.add(board.id);
+          void tryPushEncryptedPinboard(board, key);
+        }
+
+        const live = remote.filter((c) => !c.deletedAt);
+        const newLive = live.filter((c) => !beforeIds.has(c.id));
+        const updatedLive = live.filter(
+          (c) => beforeIds.has(c.id) && beforeHashes.get(c.id) !== c.contentHash,
+        );
+
+        if (remote.length > 0) {
+          if (opts.reason === "initial" && live.length > 0) {
+            toastId = toast.loading("Restoring clips from cloud…");
+          }
+          const ok = await mergeClipsFromCloud(remote);
+          if (!ok) {
+            setPhase("error", "Could not apply cloud clips to this device");
+            toast.error("Cloud clips fetched but failed to show on this device", {
+              id: toastId,
+              duration: 6000,
+            });
+            return;
+          }
+        }
+
+        if (opts.reason === "manual") {
+          if (newLive.length > 0) {
+            setPhase(
+              "synced",
+              `Fetched ${newLive.length} new clip${newLive.length === 1 ? "" : "s"}`,
+            );
+            toast.success(
+              `Fetched ${newLive.length} new clip${newLive.length === 1 ? "" : "s"} from cloud`,
+              { duration: 3200 },
+            );
+          } else if (updatedLive.length > 0) {
+            setPhase("synced", "Cloud updates applied");
+            toast.success(
+              `Updated ${updatedLive.length} clip${updatedLive.length === 1 ? "" : "s"} from cloud`,
+              { duration: 2800 },
+            );
+          } else {
+            setPhase("synced", "Up to date");
+            toast.message("You're up to date — nothing new in the cloud", { duration: 2400 });
+          }
+        } else if (live.length > 0) {
+          setPhase("synced", `Restored ${live.length} clips`);
+          toast.success(`Restored ${live.length} clip${live.length === 1 ? "" : "s"} from cloud`, {
+            id: toastId,
+          });
+        } else {
+          setPhase("synced", remote.length > 0 ? "Up to date" : "Cloud ready");
+          if (toastId !== undefined) toast.dismiss(toastId);
+        }
+      } catch (err) {
+        console.warn("[ZeroPaste] pull failed", err);
+        pulledRef.current = true;
+        if (uid) pulledUsers.add(uid);
+        setPhase("error", "Cloud pull failed");
+        toast.error(
+          opts.reason === "manual"
+            ? "Could not refresh from cloud"
+            : "Cloud pull failed — apply the vault_meta migration and check Supabase RLS",
+          { duration: 6000 },
+        );
+      } finally {
+        pullInFlight.current = false;
+      }
+    },
+    [setPhase],
+  );
+
+  useEffect(() => {
+    registerRefreshHandler(() => pullFromCloud({ reason: "manual" }));
+    return () => registerRefreshHandler(null);
+  }, [pullFromCloud, registerRefreshHandler]);
 
   useEffect(() => {
     void setCaptureEnabled(shelfReady);
@@ -74,96 +205,18 @@ export function CloudSync() {
       return;
     }
 
+    signedOutWarned.current = false;
+
     // Already pulled for this account in this JS session — don't loop toasts.
+    // Manual refresh still works via the toolbar button.
     if (pulledUsers.has(userId)) {
       pulledRef.current = true;
       setPhase("synced");
-      return;
+    } else {
+      void pullFromCloud({ reason: "initial" });
     }
 
-    signedOutWarned.current = false;
-
     const key = vaultKey;
-    let cancelled = false;
-    let toastId: string | number | undefined;
-    setPhase("pulling", "Restoring from cloud…");
-
-    void (async () => {
-      try {
-        void tryRegisterDevice();
-
-        const [remote, remoteBoards] = await Promise.all([
-          tryPullEncryptedClips(key),
-          tryPullEncryptedPinboards(key),
-        ]);
-        if (cancelled) return;
-
-        pulledRef.current = true;
-        pulledUsers.add(userId);
-
-        for (const c of remote) {
-          seenRef.current.add(c.id);
-          bodyHashRef.current.set(c.id, c.contentHash);
-          if (c.deletedAt) deletedPushRef.current.add(c.id);
-        }
-        for (const b of remoteBoards) {
-          pinboardSeenRef.current.add(b.id);
-        }
-
-        if (remoteBoards.length > 0) {
-          await mergePinboardsFromCloud(remoteBoards);
-        }
-
-        // Upload any local custom boards that are not yet in the cloud.
-        const local = await fetchBridgeState();
-        for (const board of local?.pinboards ?? []) {
-          if (board.id === "history" || pinboardSeenRef.current.has(board.id)) continue;
-          pinboardSeenRef.current.add(board.id);
-          void tryPushEncryptedPinboard(board, key);
-        }
-
-        const liveCount = remote.filter((c) => !c.deletedAt).length;
-
-        if (remote.length > 0) {
-          toastId = toast.loading("Restoring clips from cloud…");
-          const ok = await mergeClipsFromCloud(remote);
-          if (cancelled) {
-            if (toastId !== undefined) toast.dismiss(toastId);
-            return;
-          }
-          if (!ok) {
-            setPhase("error", "Could not apply cloud clips to this device");
-            toast.error("Cloud clips fetched but failed to show on this device", {
-              id: toastId,
-              duration: 6000,
-            });
-            return;
-          }
-          if (liveCount > 0) {
-            setPhase("synced", `Restored ${liveCount} clips`);
-            toast.success(`Restored ${liveCount} clip${liveCount === 1 ? "" : "s"} from cloud`, {
-              id: toastId,
-            });
-          } else {
-            setPhase("synced", "Up to date");
-            toast.dismiss(toastId);
-          }
-        } else {
-          setPhase("synced", "Cloud ready");
-        }
-      } catch (err) {
-        console.warn("[ZeroPaste] pull failed", err);
-        pulledRef.current = true;
-        pulledUsers.add(userId);
-        if (cancelled) return;
-        setPhase("error", "Cloud pull failed");
-        toast.error(
-          "Cloud pull failed — apply the vault_meta migration and check Supabase RLS",
-          { duration: 6000 },
-        );
-      }
-    })();
-
     const unsub = trySubscribeEncryptedClips(key, (clip) => {
       seenRef.current.add(clip.id);
       bodyHashRef.current.set(clip.id, clip.contentHash);
@@ -172,11 +225,9 @@ export function CloudSync() {
     });
 
     return () => {
-      cancelled = true;
       unsub?.();
-      if (toastId !== undefined) toast.dismiss(toastId);
     };
-  }, [shelfReady, vaultKey, userId, auth.configured, auth.offlineChosen, setPhase]);
+  }, [shelfReady, vaultKey, userId, auth.configured, auth.offlineChosen, setPhase, pullFromCloud]);
 
   // Push new / edited / deleted clips + pinboards
   useEffect(() => {

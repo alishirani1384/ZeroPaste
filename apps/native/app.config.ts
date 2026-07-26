@@ -1,20 +1,33 @@
 import type { ConfigContext, ExpoConfig } from "expo/config";
 import { config as loadDotenv } from "dotenv";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 // Ensure local/CI `.env` is visible when Expo evaluates this file (prebuild + Metro).
 loadDotenv({ path: resolve(__dirname, ".env") });
 
+const pkg = JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf8")) as {
+  version: string;
+};
+
+/** Semver → monotonic Play versionCode (1.0.7 → 10007). */
+function versionCodeFromSemver(version: string): number {
+  const [maj = 0, min = 0, pat = 0] = version.split(".").map((p) => Number(p) || 0);
+  return maj * 10000 + min * 100 + pat;
+}
+
 /**
  * Dynamic config so CI / local `.env` values are embedded into `extra`
  * (read by `lib/supabase.ts`). Relies on EXPO_PUBLIC_* being present when
  * this file is evaluated (prebuild + Metro bundle).
+ *
+ * `version` / `versionCode` come from apps/native/package.json (release CI).
  */
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: "ZeroPaste",
   slug: "zeropaste",
-  version: "1.0.7",
+  version: pkg.version,
   orientation: "portrait",
   scheme: "zeropaste",
   userInterfaceStyle: "automatic",
@@ -32,7 +45,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     package: "app.zeropaste.mobile",
-    versionCode: 7,
+    versionCode: versionCodeFromSemver(pkg.version),
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
       backgroundColor: "#1C1C1E",

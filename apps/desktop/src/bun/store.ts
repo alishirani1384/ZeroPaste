@@ -226,6 +226,48 @@ export function createPinboard(name: string, color = "#E85D4C"): Pinboard {
   return board;
 }
 
+export function updatePinboard(
+  id: string,
+  patch: { name?: string; color?: string },
+): Pinboard | null {
+  if (id === "history") return null;
+  let updated: Pinboard | null = null;
+  state = {
+    ...state,
+    pinboards: state.pinboards.map((b) => {
+      if (b.id !== id) return b;
+      updated = {
+        ...b,
+        name: patch.name !== undefined ? patch.name.trim() || b.name : b.name,
+        color: patch.color !== undefined ? patch.color : b.color,
+      };
+      return updated;
+    }),
+  };
+  if (updated) emit();
+  return updated;
+}
+
+/** Remove a custom pinboard and unpin clips from it. History cannot be deleted. */
+export function deletePinboard(id: string): boolean {
+  if (id === "history") return false;
+  if (!state.pinboards.some((b) => b.id === id)) return false;
+  state = {
+    ...state,
+    pinboards: state.pinboards.filter((b) => b.id !== id),
+    clips: state.clips.map((c) => {
+      if (!c.pinnedBoardIds.includes(id)) return c;
+      return {
+        ...c,
+        pinnedBoardIds: c.pinnedBoardIds.filter((bid) => bid !== id),
+        updatedAt: new Date().toISOString(),
+      };
+    }),
+  };
+  emit();
+  return true;
+}
+
 export function pinClipToBoard(clipId: string, boardId: string) {
   state = {
     ...state,

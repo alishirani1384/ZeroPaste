@@ -2,6 +2,7 @@ import { ensureDefaultAutostart, isAutostartEnabled, setAutostartEnabled } from 
 import { cancelDragPaste, runDragPaste } from "./drag-paste";
 import { normalizeClipboardImage } from "./image-format";
 import { disableKeyboardFocus, enableKeyboardFocus } from "./keyboard-focus";
+import { getLinkPreview } from "./link-preview";
 import { getClipMedia, putClipMedia } from "./media-store";
 import { hidePanel } from "./panel-visibility";
 import { pasteClipById } from "./paste";
@@ -9,6 +10,7 @@ import { setDesiredCursor } from "./win32-cursor";
 import { ensureWindowsDesktopIntegration } from "./windows-install";
 import {
   createPinboard,
+  deletePinboard,
   getState,
   mergeClip,
   pinClipToBoard,
@@ -22,6 +24,7 @@ import {
   subscribe,
   suppressCapture,
   updateClipBody,
+  updatePinboard,
   type DesktopState,
 } from "./store";
 import {
@@ -94,6 +97,15 @@ export function startBridgeServer() {
         return Response.json({ ok: true, enabled: !!body.enabled, hostBuild: HOST_BUILD }, { headers });
       }
 
+      if (url.pathname === "/link-preview" && req.method === "POST") {
+        const body = (await req.json()) as { url?: string };
+        if (typeof body.url !== "string" || !body.url.trim()) {
+          return Response.json({ error: "invalid" }, { status: 400, headers });
+        }
+        const preview = await getLinkPreview(body.url);
+        return Response.json({ ok: true, preview }, { headers });
+      }
+
       if (url.pathname === "/cursor" && req.method === "POST") {
         const body = (await req.json()) as { cursor?: string };
         if (typeof body.cursor === "string") setDesiredCursor(body.cursor);
@@ -117,7 +129,7 @@ export function startBridgeServer() {
         };
         fitWindow({
           width: body.width ?? 1100,
-          height: body.height ?? 320,
+          height: body.height ?? 340,
           anchor: body.anchor === "center" ? "center" : "bottom-center",
         });
         return Response.json({ ok: true, hostBuild: HOST_BUILD }, { headers });
@@ -260,6 +272,26 @@ export function startBridgeServer() {
         const body = (await req.json()) as { name?: string; color?: string };
         const board = createPinboard(body.name ?? "Pinboard", body.color);
         return Response.json({ ok: true, board, ...statePayload() }, { headers });
+      }
+
+      if (url.pathname === "/pinboard-update" && req.method === "POST") {
+        const body = (await req.json()) as { id?: string; name?: string; color?: string };
+        if (!body.id || typeof body.id !== "string") {
+          return Response.json({ error: "invalid" }, { status: 400, headers });
+        }
+        const board = updatePinboard(body.id, { name: body.name, color: body.color });
+        if (!board) return Response.json({ error: "not_found" }, { status: 404, headers });
+        return Response.json({ ok: true, board, ...statePayload() }, { headers });
+      }
+
+      if (url.pathname === "/pinboard-delete" && req.method === "POST") {
+        const body = (await req.json()) as { id?: string };
+        if (!body.id || typeof body.id !== "string") {
+          return Response.json({ error: "invalid" }, { status: 400, headers });
+        }
+        const ok = deletePinboard(body.id);
+        if (!ok) return Response.json({ error: "not_found" }, { status: 404, headers });
+        return Response.json({ ok: true, ...statePayload() }, { headers });
       }
 
       if (url.pathname === "/pin-clip" && req.method === "POST") {

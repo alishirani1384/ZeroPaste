@@ -19,12 +19,16 @@ export function AuthPanel() {
   const [autostartBusy, setAutostartBusy] = useState(false);
 
   useEffect(() => {
+    // Defer so Account sheet paint isn't blocked; host reads pref file (no console spawn).
     let cancelled = false;
-    void getAutostartEnabled().then((enabled) => {
-      if (!cancelled) setAutostart(enabled);
-    });
+    const t = window.setTimeout(() => {
+      void getAutostartEnabled().then((enabled) => {
+        if (!cancelled) setAutostart(enabled);
+      });
+    }, 120);
     return () => {
       cancelled = true;
+      window.clearTimeout(t);
     };
   }, []);
 
@@ -33,10 +37,9 @@ export function AuthPanel() {
       <div className="zp-auth">
         <h2>Cloud sync</h2>
         <p>
-          Set <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in{" "}
-          <code>apps/web/.env</code>, then apply <code>supabase/migrations</code>.
+          Add Supabase keys in <code>apps/web/.env</code> to enable sync. Your local vault still
+          protects clips on this device.
         </p>
-        <p className="zp-auth-muted">Local E2E vault still protects clips on this device.</p>
         {autostart !== null ? (
           <label className="zp-auth-toggle">
             <input
@@ -87,23 +90,25 @@ export function AuthPanel() {
 
   return (
     <div className="zp-auth">
-      <h2>Account & sync</h2>
+      <h2>Account</h2>
       {auth.session ? (
         <>
           <p>
-            Signed in as <strong>{auth.session.user.email}</strong>. Clips, pinboards, and this
-            device sync to your account.
+            Signed in as <strong>{auth.session.user.email}</strong>
+          </p>
+          <p className="zp-auth-muted">
+            Clips and pinboards sync encrypted to your account.
           </p>
           <button type="button" className="zp-gate-primary" onClick={() => void auth.signOut()}>
-            Sign out
+            Sign Out
           </button>
         </>
       ) : (
         <>
           <p>
             {auth.offlineChosen
-              ? "You are offline. Sign in to sync encrypted history across devices."
-              : "Sign in to sync encrypted history across Windows, Linux, and Android."}
+              ? "You’re offline. Sign in anytime to sync encrypted history."
+              : "Sign in to sync encrypted history across your devices."}
           </p>
           <label className="zp-gate-field">
             <span>Email</span>
