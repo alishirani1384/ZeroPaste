@@ -37,6 +37,7 @@ import {
   stopWindowDrag,
   type WindowMode,
 } from "./window-layout";
+import { loadWebSession, saveWebSession } from "./web-session";
 
 const PORT = 47821;
 
@@ -95,6 +96,20 @@ export function startBridgeServer() {
         if (body.enabled) await enableKeyboardFocus();
         else await disableKeyboardFocus();
         return Response.json({ ok: true, enabled: !!body.enabled, hostBuild: HOST_BUILD }, { headers });
+      }
+
+      if (url.pathname === "/web-session" && req.method === "GET") {
+        const session = await loadWebSession();
+        return Response.json({ ok: true, session, hostBuild: HOST_BUILD }, { headers });
+      }
+
+      if (url.pathname === "/web-session" && req.method === "POST") {
+        const body = (await req.json()) as { keys?: Record<string, string> };
+        if (!body.keys || typeof body.keys !== "object") {
+          return Response.json({ error: "invalid" }, { status: 400, headers });
+        }
+        const session = await saveWebSession(body.keys);
+        return Response.json({ ok: true, session, hostBuild: HOST_BUILD }, { headers });
       }
 
       if (url.pathname === "/link-preview" && req.method === "POST") {

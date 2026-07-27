@@ -94,11 +94,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const continueOffline = useCallback(() => {
     localStorage.setItem(OFFLINE_KEY, "1");
     setOfflineChosen(true);
+    void import("@/lib/host-session").then((m) => m.scheduleHostSessionFlush());
   }, []);
 
   const cancelOffline = useCallback(() => {
     localStorage.removeItem(OFFLINE_KEY);
     setOfflineChosen(false);
+    void import("@/lib/host-session").then((m) => m.scheduleHostSessionFlush());
   }, []);
 
   const readyForVault = !configured || !!session || offlineChosen;
