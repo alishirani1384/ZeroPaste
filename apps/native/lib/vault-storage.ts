@@ -34,16 +34,22 @@ export async function clearVaultMeta() {
   await removeKey(META_KEY);
 }
 
-async function getOrCreateDeviceSecret(): Promise<Uint8Array> {
-  const existing = await SecureStore.getItemAsync(DEVICE_SECRET_KEY);
-  if (existing) {
-    try {
-      const bytes = fromB64(existing);
-      if (bytes.length === 32) return bytes;
-    } catch {
-      /* recreate */
-    }
+/** Read existing device secret — never mints (minting on load can wipe unlock). */
+async function readDeviceSecret(): Promise<Uint8Array | null> {
+  try {
+    const existing = await SecureStore.getItemAsync(DEVICE_SECRET_KEY);
+    if (!existing) return null;
+    const bytes = fromB64(existing);
+    if (bytes.length === 32) return bytes;
+  } catch {
+    /* corrupt / unavailable */
   }
+  return null;
+}
+
+async function getOrCreateDeviceSecret(): Promise<Uint8Array> {
+  const existing = await readDeviceSecret();
+  if (existing) return existing;
   const secret = generateVaultKey();
   await SecureStore.setItemAsync(DEVICE_SECRET_KEY, toB64(secret));
   return secret;
@@ -71,8 +77,12 @@ export async function loadUnlockSession(): Promise<Uint8Array | null> {
       await clearUnlockSession();
       return null;
     }
-    return unwrapKey(await getOrCreateDeviceSecret(), parsed.wrap);
+    const secret = await readDeviceSecret();
+    // Missing secret: leave unlock blob alone (SecureStore may be temporarily unavailable).
+    if (!secret) return null;
+    return unwrapKey(secret, parsed.wrap);
   } catch {
+    // Corrupt wrap with a known secret — drop unlock only.
     await clearUnlockSession();
     return null;
   }

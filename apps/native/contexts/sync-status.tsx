@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -12,10 +13,16 @@ export type CloudSyncPhase = "idle" | "pulling" | "synced" | "error" | "unsigned
 /** Per-clip cloud presence for card badges. */
 export type ClipCloudBadge = "synced" | "unsynced" | "local_only";
 
+type RefreshHandler = () => Promise<void>;
+
 type SyncStatusContextValue = {
   phase: CloudSyncPhase;
   detail?: string;
   setPhase: (phase: CloudSyncPhase, detail?: string) => void;
+  /** Pull encrypted clips/pinboards from the cloud (pull-to-refresh). */
+  refreshFromCloud: () => Promise<void>;
+  /** CloudSync registers the real pull implementation here. */
+  registerRefreshHandler: (handler: RefreshHandler | null) => void;
   /** clipId → badge; missing id treated as unsynced when signed-in sync is active */
   clipBadge: ReadonlyMap<string, ClipCloudBadge>;
   markClipSynced: (id: string) => void;
@@ -30,10 +37,21 @@ export function SyncStatusProvider({ children }: { children: ReactNode }) {
   const [phase, setPhaseState] = useState<CloudSyncPhase>("idle");
   const [detail, setDetail] = useState<string | undefined>();
   const [clipBadge, setClipBadge] = useState<Map<string, ClipCloudBadge>>(() => new Map());
+  const handlerRef = useRef<RefreshHandler | null>(null);
 
   const setPhase = useCallback((next: CloudSyncPhase, nextDetail?: string) => {
     setPhaseState(next);
     setDetail(nextDetail);
+  }, []);
+
+  const registerRefreshHandler = useCallback((handler: RefreshHandler | null) => {
+    handlerRef.current = handler;
+  }, []);
+
+  const refreshFromCloud = useCallback(async () => {
+    const fn = handlerRef.current;
+    if (!fn) return;
+    await fn();
   }, []);
 
   const markClipSynced = useCallback((id: string) => {
@@ -77,6 +95,8 @@ export function SyncStatusProvider({ children }: { children: ReactNode }) {
       phase,
       detail,
       setPhase,
+      refreshFromCloud,
+      registerRefreshHandler,
       clipBadge,
       markClipSynced,
       markClipLocalOnly,
@@ -87,6 +107,8 @@ export function SyncStatusProvider({ children }: { children: ReactNode }) {
       phase,
       detail,
       setPhase,
+      refreshFromCloud,
+      registerRefreshHandler,
       clipBadge,
       markClipSynced,
       markClipLocalOnly,
@@ -111,7 +133,6 @@ export function clipCloudBadgeFor(
 ): ClipCloudBadge {
   const known = clipBadge.get(clipId);
   if (known) return known;
-  // Offline / unsigned — nothing is in the cloud from this session's POV.
   if (phase === "offline" || phase === "unsigned" || phase === "idle") return "unsynced";
   return "unsynced";
 }

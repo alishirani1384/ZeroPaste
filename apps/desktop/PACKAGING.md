@@ -7,7 +7,7 @@ Workflow: [`.github/workflows/release.yml`](../../.github/workflows/release.yml)
 1. Bump `version` in `apps/desktop/package.json` (and/or `apps/native/package.json`)
 2. Push to `main`
 3. CI publishes only apps whose version **changed** in that push  
-   - Desktop → tag `desktop-vX.Y.Z` + Setup zip  
+   - Desktop → tag `desktop-vX.Y.Z` with **Windows Setup zip** + **Linux Setup tar.gz**  
    - Android → tag `android-vX.Y.Z` + APK  
 
 Manual: Actions → **Release** → Run workflow → force Android/Desktop.
@@ -144,4 +144,12 @@ bun run build:stable
 
 ## Linux
 
-Ship the AppImage from the Linux build artifacts. Icon comes from `build.linux.icon`.
+CI publishes `ZeroPaste-desktop-vX.Y.Z-linux-x64-Setup.tar.gz` (Electrobun self-extracting
+`installer` + README — not AppImage, so no libfuse2). Icon comes from `build.linux.icon`.
+
+```bash
+tar -xzf ZeroPaste-desktop-vX.Y.Z-linux-x64-Setup.tar.gz
+./installer
+```
+
+Extracts to `~/.local/share/` and creates a desktop shortcut.

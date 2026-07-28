@@ -110,7 +110,8 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (needAuth) {
+  // Local 7-day unlock must not be blocked by a dropped cloud session.
+  if (needAuth && !vault.unlocked) {
     return (
       <GateShell bg={bg} insetsTop={insets.top} insetsBottom={insets.bottom}>
         <LargeTitle ink={ink} title="Sign In" subtitle="Sync is optional. Your vault stays on-device." />

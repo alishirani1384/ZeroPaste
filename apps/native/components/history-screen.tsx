@@ -41,8 +41,9 @@ export function HistoryScreen() {
   const vault = useVault();
   const auth = useAuth();
   const store = useClipStore();
-  const { phase, detail } = useSyncStatus();
+  const { phase, detail, refreshFromCloud } = useSyncStatus();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [query, setQuery] = useState("");
   const [kind] = useState<ClipKind | "all">("all");
@@ -189,6 +190,20 @@ export function HistoryScreen() {
     ? "Loading history…"
     : detail || "Restoring from cloud…";
 
+  const canPullToRefresh =
+    vault.unlocked && !vault.recoveryKeyOnce && !!auth.session && auth.configured;
+
+  const onPullRefresh = useCallback(async () => {
+    if (!canPullToRefresh || refreshing) return;
+    setRefreshing(true);
+    try {
+      await refreshFromCloud();
+      void Haptics.selectionAsync();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [canPullToRefresh, refreshing, refreshFromCloud]);
+
   return (
     <View style={[styles.root, { backgroundColor: bg }]}>
       <View style={{ paddingTop: insets.top + 4 }}>
@@ -204,6 +219,10 @@ export function HistoryScreen() {
       <MasonryGrid
         data={clips}
         gutter={GUTTER}
+        refreshing={refreshing}
+        onRefresh={canPullToRefresh ? () => void onPullRefresh() : undefined}
+        refreshTintColor={colors.crimson}
+        refreshColors={[colors.crimson]}
         contentContainerStyle={{
           paddingHorizontal: H_PAD,
           paddingBottom: 100 + insets.bottom,
@@ -232,7 +251,9 @@ export function HistoryScreen() {
                 Nothing here yet
               </Text>
               <Text style={[styles.emptyBody, { color: isDark ? colors.mutedDark : colors.mutedLight }]}>
-                Copy something in another app, then switch back — or tap + to capture now.
+                {canPullToRefresh
+                  ? "Pull down to refresh from the cloud, or copy something in another app."
+                  : "Copy something in another app, then switch back — or tap + to capture now."}
               </Text>
             </View>
           )

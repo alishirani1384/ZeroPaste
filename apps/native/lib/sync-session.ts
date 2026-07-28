@@ -1,16 +1,20 @@
 import type { ClipItem, Pinboard } from "@paste/clipboard-core";
 import {
   decryptClip,
+  loadClipsPullCursor,
   loadLocalDeviceId,
   pullClips,
   pullPinboards,
   pushClip,
   pushPinboard,
   registerDevice,
+  saveClipsPullCursor,
   softDeleteRemoteClip,
   softDeleteRemotePinboard,
   subscribeClips,
   type ClipRow,
+  type PullClipsOptions,
+  type PullClipsResult,
 } from "@paste/sync";
 
 import { getSupabaseNative } from "./supabase";
@@ -164,14 +168,24 @@ export async function trySoftDeletePinboard(
 
 export async function tryPullEncryptedClips(
   vaultKey: Uint8Array,
-): Promise<{ items: ClipItem[]; failedCount: number }> {
+  opts?: { full?: boolean; onPage?: PullClipsOptions["onPage"]; signal?: AbortSignal },
+): Promise<PullClipsResult> {
   const client = getSupabaseNative();
-  if (!client) return { items: [], failedCount: 0 };
+  if (!client) return { items: [], failedCount: 0, maxUpdatedAt: null };
   const {
     data: { session },
   } = await client.auth.getSession();
-  if (!session) return { items: [], failedCount: 0 };
-  return pullClips(client, session.user.id, vaultKey);
+  if (!session) return { items: [], failedCount: 0, maxUpdatedAt: null };
+  const since = opts?.full ? undefined : await loadClipsPullCursor(session.user.id);
+  const result = await pullClips(client, session.user.id, vaultKey, {
+    since,
+    onPage: opts?.onPage,
+    signal: opts?.signal,
+  });
+  if (result.maxUpdatedAt) {
+    await saveClipsPullCursor(session.user.id, result.maxUpdatedAt);
+  }
+  return result;
 }
 
 export function trySubscribeEncryptedClips(

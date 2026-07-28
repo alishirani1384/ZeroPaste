@@ -45,6 +45,14 @@ export async function loadWebSession(): Promise<WebSessionBlob> {
 
 export async function saveWebSession(keys: Record<string, string>): Promise<WebSessionBlob> {
   await mkdir(ROOT, { recursive: true });
+  // Refuse empty replace over an existing durable session (protects against
+  // a cold WebView flushing before hydrate restored keys).
+  const prev = await loadWebSession();
+  const incomingCount = Object.keys(keys).length;
+  if (incomingCount === 0 && Object.keys(prev.keys).length > 0) {
+    console.warn("[ZeroPaste] refusing empty web-session overwrite");
+    return prev;
+  }
   const next: WebSessionBlob = {
     version: 1,
     keys: { ...keys },

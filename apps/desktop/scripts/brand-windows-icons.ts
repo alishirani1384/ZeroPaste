@@ -229,6 +229,11 @@ function main() {
 
   console.log(`[brand-icons] using resedit/Win32 + ${ico}`);
 
+  if (process.platform !== "win32") {
+    console.log("[brand-icons] skip (non-Windows host)");
+    return;
+  }
+
   const buildDir = process.env.ELECTROBUN_BUILD_DIR || join(root, "build");
   const targets = new Set(collectTargets(buildDir));
 

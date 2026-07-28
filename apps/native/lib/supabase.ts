@@ -2,11 +2,13 @@ import { createSupabase, isSupabaseConfigured, setSyncStorage } from "@paste/syn
 import type { SupabaseClient } from "@supabase/supabase-js";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
+import { AppState, type AppStateStatus } from "react-native";
 
 import { hydrateRnStorage, rnSyncStorage } from "./rn-storage";
 
 let client: SupabaseClient | null | undefined;
 let ready: Promise<void> | null = null;
+let appStateWired = false;
 
 /**
  * Read Expo public env from the app bundle (not @paste/env workspace package —
@@ -50,5 +52,23 @@ export function getSupabaseNative(): SupabaseClient | null {
     storage: AsyncStorage,
     detectSessionInUrl: false,
   });
+  // RN: Supabase pauses auto-refresh in background; resume when active or
+  // refresh tokens expire and the next launch looks "signed out".
+  if (!appStateWired) {
+    appStateWired = true;
+    const onChange = (state: AppStateStatus) => {
+      const sb = client;
+      if (!sb) return;
+      if (state === "active") {
+        void sb.auth.startAutoRefresh();
+      } else {
+        void sb.auth.stopAutoRefresh();
+      }
+    };
+    AppState.addEventListener("change", onChange);
+    if (AppState.currentState === "active") {
+      void client.auth.startAutoRefresh();
+    }
+  }
   return client;
 }

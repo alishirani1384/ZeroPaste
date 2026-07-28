@@ -72,9 +72,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const adoptMeta = useCallback(async (next: LocalVaultMeta) => {
+    const current = meta;
     await saveVaultMeta(next);
     setMeta(next);
-  }, []);
+    // Different vault salt ⇒ existing vaultKey is wrong; force re-unlock.
+    if (current && current.saltB64 !== next.saltB64) {
+      await clearUnlockSession();
+      setVaultKey(null);
+    }
+  }, [meta]);
 
   const unlock = useCallback(
     async (passphrase: string) => {

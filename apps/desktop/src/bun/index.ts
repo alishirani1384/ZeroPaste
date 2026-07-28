@@ -92,18 +92,25 @@ startClipboardPoller();
 const boot = getBridgeBootInfo();
 
 const url = await getMainViewUrl();
-const urlWithAuth = (() => {
-  try {
-    const u = new URL(url);
-    u.searchParams.set("bridgeToken", boot.token);
-    u.searchParams.set("bridgePort", String(boot.port));
-    return u.toString();
-  } catch {
-    // views:// scheme may not parse as URL in all runtimes
-    const sep = url.includes("?") ? "&" : "?";
-    return `${url}${sep}bridgeToken=${encodeURIComponent(boot.token)}&bridgePort=${boot.port}`;
-  }
-})();
+/**
+ * Never append query params to views:// — Electrobun/WebView2 treats
+ * `views://mainview/index.html?…` as a missing file and the shelf stays blank.
+ * Dev HMR (http://localhost) can take query injection; packaged UI uses /bridge-boot.
+ */
+const urlWithAuth = url.startsWith("views://")
+  ? url
+  : (() => {
+      try {
+        const u = new URL(url);
+        u.searchParams.set("bridgeToken", boot.token);
+        u.searchParams.set("bridgePort", String(boot.port));
+        return u.toString();
+      } catch {
+        const sep = url.includes("?") ? "&" : "?";
+        return `${url}${sep}bridgeToken=${encodeURIComponent(boot.token)}&bridgePort=${boot.port}`;
+      }
+    })();
+console.log("[ZeroPaste] main view", url.startsWith("views://") ? url : url.split("?")[0], "port", boot.port);
 
 // Create at MAX canvas (hit-test ceiling). /window-fit shrinks to the UI.
 const size = resolveWindowSize();

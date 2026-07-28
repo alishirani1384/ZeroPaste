@@ -1,7 +1,8 @@
 /**
  * Encrypt ~/.zeropaste sensitive files at rest.
- * Windows: DPAPI (CurrentUser) via PowerShell ProtectedData.
- * Other platforms: AES-256-GCM with a machine-local key file (mode 0600).
+ *
+ * Strategy: AES-256-GCM for all payloads (avoids PowerShell cmdline limits).
+ * On Windows the 32-byte host key itself is DPAPI-protected (CurrentUser).
  */
 
 import { mkdir, readFile, writeFile, chmod } from "node:fs/promises";
@@ -14,18 +15,99 @@ import { atomicWriteFile } from "./atomic-write";
 
 const ROOT = join(homedir(), ".zeropaste");
 const HOST_KEY_FILE = join(ROOT, ".host-key");
+const HOST_KEY_DPAPI_FILE = join(ROOT, ".host-key.dpapi");
 
 const MAGIC = "ZPENC1";
 
-async function loadOrCreateHostKey(): Promise<Buffer> {
-  await mkdir(ROOT, { recursive: true });
+/** DPAPI-protect a small buffer via a temp file (never inline large payloads into -Command). */
+async function dpapiProtectBytes(plain: Buffer): Promise<Buffer | null> {
+  if (process.platform !== "win32") return null;
+  const tmpIn = join(ROOT, `.dpapi-in-${process.pid}-${Date.now()}.bin`);
+  const tmpOut = join(ROOT, `.dpapi-out-${process.pid}-${Date.now()}.bin`);
   try {
-    const raw = await readFile(HOST_KEY_FILE);
-    if (raw.byteLength === 32) return Buffer.from(raw);
-  } catch {
-    /* create */
+    await mkdir(ROOT, { recursive: true });
+    await writeFile(tmpIn, plain);
+    const script = `
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Security
+$bytes = [IO.File]::ReadAllBytes('${tmpIn.replace(/'/g, "''")}')
+$prot = [Security.Cryptography.ProtectedData]::Protect($bytes, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
+[IO.File]::WriteAllBytes('${tmpOut.replace(/'/g, "''")}', $prot)
+`.trim();
+    const { code, stderr } = await spawnHiddenPowerShell(["-Command", script]);
+    if (code !== 0) {
+      console.warn("[ZeroPaste] DPAPI protect failed", stderr);
+      return null;
+    }
+    return await readFile(tmpOut);
+  } catch (err) {
+    console.warn("[ZeroPaste] DPAPI protect error", err);
+    return null;
+  } finally {
+    try {
+      const { unlink } = await import("node:fs/promises");
+      await unlink(tmpIn).catch(() => {});
+      await unlink(tmpOut).catch(() => {});
+    } catch {
+      /* ignore */
+    }
   }
-  const key = randomBytes(32);
+}
+
+async function dpapiUnprotectBytes(prot: Buffer): Promise<Buffer | null> {
+  if (process.platform !== "win32") return null;
+  const tmpIn = join(ROOT, `.dpapi-in-${process.pid}-${Date.now()}.bin`);
+  const tmpOut = join(ROOT, `.dpapi-out-${process.pid}-${Date.now()}.bin`);
+  try {
+    await mkdir(ROOT, { recursive: true });
+    await writeFile(tmpIn, prot);
+    const script = `
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Security
+$bytes = [IO.File]::ReadAllBytes('${tmpIn.replace(/'/g, "''")}')
+$plain = [Security.Cryptography.ProtectedData]::Unprotect($bytes, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
+[IO.File]::WriteAllBytes('${tmpOut.replace(/'/g, "''")}', $plain)
+`.trim();
+    const { code, stderr } = await spawnHiddenPowerShell(["-Command", script]);
+    if (code !== 0) {
+      console.warn("[ZeroPaste] DPAPI unprotect failed", stderr);
+      return null;
+    }
+    return await readFile(tmpOut);
+  } catch (err) {
+    console.warn("[ZeroPaste] DPAPI unprotect error", err);
+    return null;
+  } finally {
+    try {
+      const { unlink } = await import("node:fs/promises");
+      await unlink(tmpIn).catch(() => {});
+      await unlink(tmpOut).catch(() => {});
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/** Process-lifetime cache — avoid re-running DPAPI PowerShell on every seal/open. */
+let cachedHostKey: Buffer | null = null;
+
+async function persistHostKey(key: Buffer): Promise<void> {
+  cachedHostKey = key;
+  await mkdir(ROOT, { recursive: true });
+  if (process.platform === "win32") {
+    const prot = await dpapiProtectBytes(key);
+    if (prot) {
+      await writeFile(HOST_KEY_DPAPI_FILE, prot);
+      // Remove legacy plaintext key if present.
+      try {
+        const { unlink } = await import("node:fs/promises");
+        await unlink(HOST_KEY_FILE).catch(() => {});
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+  }
   await writeFile(HOST_KEY_FILE, key);
   if (process.platform !== "win32") {
     try {
@@ -34,35 +116,40 @@ async function loadOrCreateHostKey(): Promise<Buffer> {
       /* ignore */
     }
   }
+}
+
+async function loadOrCreateHostKey(): Promise<Buffer> {
+  if (cachedHostKey && cachedHostKey.byteLength === 32) return cachedHostKey;
+
+  await mkdir(ROOT, { recursive: true });
+
+  // Prefer DPAPI-wrapped key on Windows.
+  try {
+    const prot = await readFile(HOST_KEY_DPAPI_FILE);
+    const plain = await dpapiUnprotectBytes(prot);
+    if (plain && plain.byteLength === 32) {
+      cachedHostKey = plain;
+      return plain;
+    }
+  } catch {
+    /* fall through */
+  }
+
+  // Legacy plaintext host key (migrate to DPAPI when possible).
+  try {
+    const raw = await readFile(HOST_KEY_FILE);
+    if (raw.byteLength === 32) {
+      const key = Buffer.from(raw);
+      await persistHostKey(key);
+      return key;
+    }
+  } catch {
+    /* create */
+  }
+
+  const key = randomBytes(32);
+  await persistHostKey(key);
   return key;
-}
-
-async function dpapiProtect(plainB64: string): Promise<string | null> {
-  if (process.platform !== "win32") return null;
-  const script = `
-$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Security
-$bytes = [Convert]::FromBase64String('${plainB64}')
-$prot = [Security.Cryptography.ProtectedData]::Protect($bytes, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
-[Convert]::ToBase64String($prot)
-`.trim();
-  const { stdout, code } = await spawnHiddenPowerShell(["-Command", script]);
-  if (code !== 0 || !stdout) return null;
-  return stdout.trim();
-}
-
-async function dpapiUnprotect(protB64: string): Promise<string | null> {
-  if (process.platform !== "win32") return null;
-  const script = `
-$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Security
-$bytes = [Convert]::FromBase64String('${protB64}')
-$plain = [Security.Cryptography.ProtectedData]::Unprotect($bytes, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
-[Convert]::ToBase64String($plain)
-`.trim();
-  const { stdout, code } = await spawnHiddenPowerShell(["-Command", script]);
-  if (code !== 0 || !stdout) return null;
-  return stdout.trim();
 }
 
 function aesEncrypt(key: Buffer, plaintext: Buffer): Buffer {
@@ -82,44 +169,39 @@ function aesDecrypt(key: Buffer, blob: Buffer): Buffer {
   return Buffer.concat([decipher.update(data), decipher.final()]);
 }
 
-/** Encrypt UTF-8 text → file bytes (magic + envelope). */
+/** Encrypt UTF-8 text → sealed file bytes. */
 export async function sealUtf8(plaintext: string): Promise<Uint8Array> {
-  const plain = Buffer.from(plaintext, "utf8");
-  if (process.platform === "win32") {
-    const prot = await dpapiProtect(plain.toString("base64"));
-    if (prot) {
-      const body = Buffer.from(`dpapi:${prot}`, "utf8");
-      return Buffer.concat([Buffer.from(MAGIC, "utf8"), body]);
-    }
-  }
   const key = await loadOrCreateHostKey();
-  const enc = aesEncrypt(key, plain);
-  const body = Buffer.concat([Buffer.from("aes:", "utf8"), enc]);
-  return Buffer.concat([Buffer.from(MAGIC, "utf8"), body]);
+  const enc = aesEncrypt(key, Buffer.from(plaintext, "utf8"));
+  return Buffer.concat([Buffer.from(MAGIC, "utf8"), Buffer.from("aes:", "utf8"), enc]);
 }
 
-/** Decrypt file bytes → UTF-8 text. Falls back to treating raw as plaintext (legacy). */
+/** Decrypt sealed bytes → UTF-8. Falls back to legacy plaintext / old dpapi: envelopes. */
 export async function openUtf8(raw: Uint8Array | Buffer): Promise<string> {
   const buf = Buffer.from(raw);
   const magic = buf.subarray(0, MAGIC.length).toString("utf8");
   if (magic !== MAGIC) {
-    // Legacy plaintext JSON
     return buf.toString("utf8");
   }
   const body = buf.subarray(MAGIC.length);
   const asText = body.toString("utf8");
+
+  // Legacy: whole payload DPAPI'd via PowerShell (may fail to open if huge; rare).
   if (asText.startsWith("dpapi:")) {
-    const plainB64 = await dpapiUnprotect(asText.slice("dpapi:".length));
-    if (!plainB64) throw new Error("DPAPI unprotect failed");
-    return Buffer.from(plainB64, "base64").toString("utf8");
+    const protB64 = asText.slice("dpapi:".length);
+    const prot = Buffer.from(protB64, "base64");
+    const plain = await dpapiUnprotectBytes(prot);
+    if (!plain) throw new Error("DPAPI unprotect failed");
+    return plain.toString("utf8");
   }
-  if (asText.startsWith("aes:") || body[0] === 0x61 /* 'a' */) {
-    // binary after "aes:" prefix
+
+  if (asText.startsWith("aes:") || body.subarray(0, 4).toString("utf8") === "aes:") {
     const prefix = Buffer.from("aes:", "utf8");
     const payload = body.subarray(prefix.length);
     const key = await loadOrCreateHostKey();
     return aesDecrypt(key, payload).toString("utf8");
   }
+
   throw new Error("Unknown sealed envelope");
 }
 

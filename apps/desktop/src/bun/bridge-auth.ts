@@ -68,23 +68,29 @@ export function getBridgePort(): number {
 
 export { DEFAULT_PORT, PORT_SCAN };
 
-/** Origins allowed to receive CORS responses (browser drive-by blocked). */
 export function corsHeadersFor(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin");
+  // Packaged Electrobun WebView often sends Origin: null for views:// pages.
   const allow =
-    origin &&
-    (origin.startsWith("http://localhost:") ||
-      origin.startsWith("http://127.0.0.1:") ||
-      origin === "null" ||
-      origin.startsWith("views://"));
+    !origin ||
+    origin === "null" ||
+    origin.startsWith("http://localhost:") ||
+    origin.startsWith("http://127.0.0.1:") ||
+    origin.startsWith("views://");
 
   const headers: Record<string, string> = {
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, X-ZeroPaste-Token",
   };
-  if (allow && origin) {
-    headers["Access-Control-Allow-Origin"] = origin;
-    headers["Vary"] = "Origin";
+  if (allow) {
+    // Echo a concrete origin when present; use * only when Origin is absent
+    // (non-browser clients). Browsers that sent Origin: null need ACAO null.
+    if (!origin) {
+      headers["Access-Control-Allow-Origin"] = "*";
+    } else {
+      headers["Access-Control-Allow-Origin"] = origin;
+      headers["Vary"] = "Origin";
+    }
   }
   return headers;
 }

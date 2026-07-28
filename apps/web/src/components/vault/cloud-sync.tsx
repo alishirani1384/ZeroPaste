@@ -85,9 +85,22 @@ export function CloudSync() {
 
         const beforeIds = new Set(seenRef.current);
         const beforeHashes = new Map(bodyHashRef.current);
+        let applied = 0;
 
         const [clipsResult, boardsResult] = await Promise.all([
-          tryPullEncryptedClips(key),
+          tryPullEncryptedClips(key, {
+            onPage: (page) => {
+              if (page.length === 0) return;
+              applied += page.length;
+              void mergeClipsFromCloud(page);
+              setPhase(
+                "pulling",
+                opts.reason === "manual"
+                  ? `Updating… ${applied} clips`
+                  : `Restoring… ${applied} clips`,
+              );
+            },
+          }),
           tryPullEncryptedPinboards(key),
         ]);
         const remote = clipsResult.items;
@@ -135,7 +148,9 @@ export function CloudSync() {
           (c) => beforeIds.has(c.id) && beforeHashes.get(c.id) !== c.contentHash,
         );
 
-        if (remote.length > 0) {
+        // Pages already merged via onPage; still merge once if nothing streamed
+        // (e.g. empty incremental) or to catch any race.
+        if (remote.length > 0 && applied === 0) {
           if (opts.reason === "initial" && live.length > 0) {
             toastId = toast.loading("Restoring clips from cloud…");
           }
@@ -329,8 +344,13 @@ export function CloudSync() {
               skipToastOnce.current = true;
               toast.message("Not signed in — clips stay local only", { duration: 2800 });
             }
+            seenRef.current.delete(clip.id);
+            if (prevHash === undefined) bodyHashRef.current.delete(clip.id);
+            else bodyHashRef.current.set(clip.id, prevHash);
           } else if (result === "error") {
             seenRef.current.delete(clip.id);
+            if (prevHash === undefined) bodyHashRef.current.delete(clip.id);
+            else bodyHashRef.current.set(clip.id, prevHash);
             toast.error("Cloud sync failed");
           }
         });

@@ -146,10 +146,12 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
 
   const showingGate = !vault.unlocked || Boolean(vault.recoveryKeyOnce);
   const needAuth = auth.configured && !auth.readyForVault;
+  /** Block the shelf for account only when the vault is not already unlocked. */
+  const blockForAuth = needAuth && !vault.unlocked;
 
   const gateRevision = auth.loading
     ? "boot"
-    : needAuth
+    : blockForAuth
       ? `auth-${authMode}`
       : vault.recoveryKeyOnce
         ? "recovery-key"
@@ -162,13 +164,13 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
   useDesktopWindowFit(
     stackRef,
     "vault",
-    showingGate || needAuth || auth.loading,
+    showingGate || blockForAuth || auth.loading,
     gateRevision,
   );
 
   // Immediate fit on step change (don't wait for ResizeObserver debounce).
   useEffect(() => {
-    if (!(showingGate || needAuth || auth.loading)) return;
+    if (!(showingGate || blockForAuth || auth.loading)) return;
     const id = window.requestAnimationFrame(() => {
       const el = stackRef.current;
       if (!el) return;
@@ -181,12 +183,12 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
       });
     });
     return () => window.cancelAnimationFrame(id);
-  }, [gateRevision, showingGate, needAuth, auth.loading]);
+  }, [gateRevision, showingGate, blockForAuth, auth.loading]);
 
   // Keep vault mode while any gate is up — no delay (delay let the first paint flash wrong chrome).
   useEffect(() => {
-    void setDesktopWindowMode(showingGate || needAuth || auth.loading ? "vault" : "panel");
-  }, [showingGate, needAuth, auth.loading]);
+    void setDesktopWindowMode(showingGate || blockForAuth || auth.loading ? "vault" : "panel");
+  }, [showingGate, blockForAuth, auth.loading]);
 
   const adoptMeta = vault.adoptMeta;
 
@@ -305,7 +307,7 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (needAuth) {
+  if (blockForAuth) {
     return (
       <GateShell
         stackRef={stackRef}

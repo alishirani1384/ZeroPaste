@@ -1,6 +1,7 @@
 import type { ClipItem } from "@paste/clipboard-core";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactElement, type ReactNode } from "react";
 import {
+  RefreshControl,
   ScrollView,
   StyleSheet,
   View,
@@ -17,6 +18,11 @@ type Props = {
   contentContainerStyle?: StyleProp<ViewStyle>;
   ListEmptyComponent?: ReactNode;
   renderItem: (item: ClipItem) => ReactNode;
+  /** Twitter-style pull-to-refresh. */
+  refreshing?: boolean;
+  onRefresh?: () => void;
+  refreshTintColor?: string;
+  refreshColors?: string[];
 };
 
 /** Estimate card height so we can pack a masonry gallery without measuring. */
@@ -60,6 +66,10 @@ export function MasonryGrid({
   contentContainerStyle,
   ListEmptyComponent,
   renderItem,
+  refreshing = false,
+  onRefresh,
+  refreshTintColor,
+  refreshColors,
 }: Props) {
   const [renderLimit, setRenderLimit] = useState(INITIAL_RENDER_LIMIT);
 
@@ -88,9 +98,24 @@ export function MasonryGrid({
     }
   };
 
+  const refreshControl: ReactElement | undefined = onRefresh ? (
+    <RefreshControl
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+      tintColor={refreshTintColor}
+      colors={refreshColors}
+      progressBackgroundColor="#ffffff"
+    />
+  ) : undefined;
+
   if (data.length === 0) {
     return (
-      <ScrollView contentContainerStyle={contentContainerStyle} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={contentContainerStyle}
+        showsVerticalScrollIndicator={false}
+        refreshControl={refreshControl}
+        alwaysBounceVertical
+      >
         {ListEmptyComponent}
       </ScrollView>
     );
@@ -102,6 +127,8 @@ export function MasonryGrid({
       showsVerticalScrollIndicator={false}
       onScroll={onScroll}
       scrollEventThrottle={100}
+      refreshControl={refreshControl}
+      alwaysBounceVertical
     >
       <View style={[styles.row, { gap: gutter }]}>
         {cols.map((col, colIndex) => (

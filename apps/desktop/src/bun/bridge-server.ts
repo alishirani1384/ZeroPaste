@@ -95,6 +95,23 @@ export async function startBridgeServer() {
             );
           }
 
+          /**
+           * Bootstrap for packaged views:// UI — Electrobun cannot take query params on
+           * views:// (they become part of the file path → blank WebView). CORS is still
+           * origin-locked, so random websites cannot read this JSON.
+           */
+          if (url.pathname === "/bridge-boot" && req.method === "GET") {
+            return Response.json(
+              {
+                ok: true,
+                token: getBridgeToken(),
+                port: getBridgePort(),
+                hostBuild: HOST_BUILD,
+              },
+              { headers },
+            );
+          }
+
           if (!isAuthorized(req, url)) return unauthorized(headers);
 
           if (url.pathname === "/state" && req.method === "GET") {

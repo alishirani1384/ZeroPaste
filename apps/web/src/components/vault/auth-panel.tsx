@@ -106,7 +106,14 @@ export function AuthPanel() {
           <p className="zp-auth-muted">
             Clips and pinboards sync encrypted to your account.
           </p>
-          <button type="button" className="zp-gate-primary" onClick={() => void auth.signOut()}>
+          <button
+            type="button"
+            className="zp-gate-primary"
+            onClick={() => {
+              vault.lock();
+              void auth.signOut();
+            }}
+          >
             Sign Out
           </button>
         </>

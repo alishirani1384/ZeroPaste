@@ -13,11 +13,21 @@ export const DURABLE_KEY_PREFIXES = [
 ] as const;
 
 let hydrateDone = false;
+/** True only after a successful GET /web-session (or non-desktop). */
+let hydrateOk = false;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushing = false;
 
 export function isDurableKey(key: string) {
   return DURABLE_KEY_PREFIXES.some((p) => key.startsWith(p));
+}
+
+export function isHostSessionHydrated() {
+  return hydrateDone;
+}
+
+export function wasHostSessionHydrateOk() {
+  return hydrateOk;
 }
 
 function collectDurableKeys(): Record<string, string> {
@@ -32,26 +42,54 @@ function collectDurableKeys(): Record<string, string> {
   return keys;
 }
 
+function restoreVaultTrio(keys: Record<string, string>): number {
+  const secretKey = "zeropaste.vault.deviceSecret";
+  const unlockKey = "zeropaste.vault.unlockSession";
+  const metaKey = "zeropaste.vault.meta";
+  if (!keys[secretKey] || !keys[unlockKey] || !keys[metaKey]) return 0;
+
+  const localSecret = localStorage.getItem(secretKey);
+  const localUnlock = localStorage.getItem(unlockKey);
+  const localMeta = localStorage.getItem(metaKey);
+  // Only force-align when the local trio is incomplete (partial WebView state).
+  if (localSecret && localUnlock && localMeta) return 0;
+
+  let applied = 0;
+  for (const k of [metaKey, secretKey, unlockKey]) {
+    localStorage.setItem(k, keys[k]!);
+    applied++;
+  }
+  return applied;
+}
+
 /** Pull host session into localStorage before Auth/Vault mount. */
 export async function hydrateWebSessionFromHost(): Promise<boolean> {
   if (typeof window === "undefined") {
     hydrateDone = true;
+    hydrateOk = true;
     return false;
   }
-  try {
-    const res = await bridgeFetch("/web-session");
-    if (!res.ok) {
-      hydrateDone = true;
-      return false;
-    }
-    const data = (await res.json()) as {
-      ok?: boolean;
-      session?: { keys?: Record<string, string> };
-    };
-    const keys = data.session?.keys ?? {};
-    let applied = 0;
+  // Retry briefly — bridge / DPAPI can be slow right after process start.
+  const attempts = 3;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await bridgeFetch("/web-session");
+      if (!res.ok) {
+        if (i < attempts - 1) {
+          await new Promise((r) => setTimeout(r, 250 * (i + 1)));
+          continue;
+        }
+        hydrateDone = true;
+        hydrateOk = false;
+        return false;
+      }
+      const data = (await res.json()) as {
+        ok?: boolean;
+        session?: { keys?: Record<string, string> };
+      };
+      const keys = data.session?.keys ?? {};
+      let applied = 0;
 
-    const applyMissing = () => {
       for (const [k, v] of Object.entries(keys)) {
         if (!isDurableKey(k) || typeof v !== "string") continue;
         const existing = localStorage.getItem(k);
@@ -60,40 +98,35 @@ export async function hydrateWebSessionFromHost(): Promise<boolean> {
           applied++;
         }
       }
-    };
 
-    applyMissing();
+      // Force-align vault trio from host when any piece is missing or secret was lost.
+      applied += restoreVaultTrio(keys);
 
-    // WebView2 sometimes keeps a stale unlock blob but loses the device secret.
-    // Force-restore the vault trio from host when the secret is missing locally.
-    const secretKey = "zeropaste.vault.deviceSecret";
-    const unlockKey = "zeropaste.vault.unlockSession";
-    const metaKey = "zeropaste.vault.meta";
-    if (
-      keys[secretKey] &&
-      keys[unlockKey] &&
-      keys[metaKey] &&
-      !localStorage.getItem(secretKey)
-    ) {
-      for (const k of [metaKey, secretKey, unlockKey]) {
-        localStorage.setItem(k, keys[k]!);
-        applied++;
+      if (applied > 0) {
+        console.info("[ZeroPaste] restored", applied, "session key(s) from host");
       }
+      hydrateDone = true;
+      hydrateOk = true;
+      return applied > 0;
+    } catch {
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, 250 * (i + 1)));
+        continue;
+      }
+      hydrateDone = true;
+      hydrateOk = false;
+      return false;
     }
-
-    if (applied > 0) {
-      console.info("[ZeroPaste] restored", applied, "session key(s) from host");
-    }
-    hydrateDone = true;
-    return applied > 0;
-  } catch {
-    hydrateDone = true;
-    return false;
   }
+  hydrateDone = true;
+  hydrateOk = false;
+  return false;
 }
 
 export function scheduleHostSessionFlush() {
   if (typeof window === "undefined" || !hydrateDone) return;
+  // Never flush an empty/partial WebView over a good host session after a failed hydrate.
+  if (!hydrateOk && Object.keys(collectDurableKeys()).length === 0) return;
   if (flushTimer) clearTimeout(flushTimer);
   flushTimer = setTimeout(() => {
     flushTimer = null;
@@ -102,10 +135,12 @@ export function scheduleHostSessionFlush() {
 }
 
 export async function flushHostSessionNow() {
-  if (typeof window === "undefined" || flushing) return;
+  if (typeof window === "undefined" || flushing || !hydrateDone) return;
+  const keys = collectDurableKeys();
+  // Refuse to wipe the host blob with an empty payload after a failed hydrate.
+  if (!hydrateOk && Object.keys(keys).length === 0) return;
   flushing = true;
   try {
-    const keys = collectDurableKeys();
     await bridgeFetch("/web-session", {
       method: "POST",
       body: JSON.stringify({ keys }),

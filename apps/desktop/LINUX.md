@@ -48,7 +48,13 @@ On first launch ZeroPaste writes `~/.config/autostart/zeropaste.desktop` so it s
 
 ## Icons
 
-Packaged builds use `apps/desktop/assets/zeropaste.png` (AppImage / `.desktop` icon). Source master: `apps/desktop/zeropaste.png`.
+Packaged builds use `apps/desktop/assets/zeropaste.png` (installer / `.desktop` icon). Source master: `apps/desktop/zeropaste.png`.
+
+## Releases
+
+GitHub Actions builds Linux x64 on Ubuntu 22.04 and attaches
+`ZeroPaste-desktop-v*-linux-x64-Setup.tar.gz` to the desktop release tag.
+Extract and run `./installer`.
 
 ## Feature parity
 

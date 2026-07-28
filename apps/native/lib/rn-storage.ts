@@ -14,7 +14,13 @@ const PERSIST_KEYS = [
 
 export const rnSyncStorage: SyncStorage = {
   getItem(key) {
-    return memory.get(key) ?? null;
+    const hit = memory.get(key);
+    if (hit !== undefined) return hit;
+    // Fall back to AsyncStorage for keys not pre-hydrated (e.g. sync cursors).
+    return AsyncStorage.getItem(key).then((v) => {
+      if (v != null) memory.set(key, v);
+      return v;
+    });
   },
   setItem(key, value) {
     memory.set(key, value);

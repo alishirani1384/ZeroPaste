@@ -100,7 +100,13 @@ export function subscribeClips(
   return channel;
 }
 
-export { pullClips } from "./pull";
+export { pullClips, type PullClipsOptions, type PullClipsResult } from "./pull";
+export {
+  clipsPullCursorKey,
+  loadClipsPullCursor,
+  saveClipsPullCursor,
+  clearClipsPullCursor,
+} from "./pull-cursor";
 export {
   createLocalVault,
   unlockWithPassphrase,

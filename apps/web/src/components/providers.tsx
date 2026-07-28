@@ -21,21 +21,27 @@ function HostSessionGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     let timedOut = false;
+
     void hydrateWebSessionFromHost()
       .then((applied) => {
-        if (cancelled || !timedOut || !applied) return;
-        // The timeout already let Auth/Vault mount before hydrate finished — remount
-        // them now so they re-read the keys hydrate just restored to localStorage.
-        setRemountKey((k) => k + 1);
+        if (cancelled) return;
+        // Late hydrate after the timeout already mounted Auth/Vault — remount so
+        // they re-read localStorage (unlock session + supabase tokens).
+        if (timedOut && applied) {
+          setRemountKey((k) => k + 1);
+        }
+        setReady(true);
       })
-      .finally(() => {
+      .catch(() => {
         if (!cancelled) setReady(true);
       });
-    // Don't block forever if the bridge is slow — shelf still works offline.
+
+    // Prefer waiting for hydrate; only open offline if the bridge is truly stuck.
     const t = window.setTimeout(() => {
       timedOut = true;
       if (!cancelled) setReady(true);
-    }, 2500);
+    }, 6000);
+
     return () => {
       cancelled = true;
       window.clearTimeout(t);

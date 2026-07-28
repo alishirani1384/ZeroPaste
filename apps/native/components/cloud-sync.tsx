@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Alert } from "react-native";
 import type { ClipItem } from "@paste/clipboard-core";
 import { fetchVaultMetaBlob, upsertVaultMetaBlob } from "@paste/sync";
@@ -30,6 +30,7 @@ export function CloudSync() {
     markClipLocalOnly,
     markClipsSynced,
     clearClipBadges,
+    registerRefreshHandler,
   } = useSyncStatus();
   const userId = auth.session?.user?.id ?? null;
   const seenRef = useRef(new Set<string>());
@@ -40,6 +41,60 @@ export function CloudSync() {
   const prevUserIdRef = useRef<string | null>(null);
 
   const shelfReady = unlocked && !recoveryKeyOnce && !!vaultKey;
+
+  const pullFromCloud = useCallback(async () => {
+    if (!shelfReady || !vaultKey || !userId) return;
+    const key = vaultKey;
+    setPhase("pulling", "Refreshing from cloud…");
+    try {
+      void tryRegisterDevice();
+      let applied = 0;
+      const [clipsResult, boardsResult] = await Promise.all([
+        tryPullEncryptedClips(key, {
+          onPage: (page) => {
+            if (page.length === 0) return;
+            applied += page.length;
+            store.upsertClips(page);
+            setPhase("pulling", `Refreshing… ${applied} clips`);
+          },
+        }),
+        tryPullEncryptedPinboards(key),
+      ]);
+      const remote = clipsResult.items;
+      const remoteBoards = boardsResult.boards;
+      pulledUsers.add(userId);
+      pulledRef.current = true;
+      for (const c of remote) {
+        seenRef.current.add(c.id);
+        bodyHashRef.current.set(c.id, c.contentHash);
+        if (c.deletedAt) deletedPushRef.current.add(c.id);
+      }
+      for (const b of remoteBoards) pinboardSeenRef.current.add(b.id);
+      markClipsSynced(remote.map((c) => c.id));
+      if (remote.length && applied === 0) store.upsertClips(remote);
+      if (remoteBoards.length) {
+        const merged = [
+          ...store.pinboards.filter((b) => !remoteBoards.some((r) => r.id === b.id)),
+          ...remoteBoards,
+        ].sort((a, b) => a.sortOrder - b.sortOrder);
+        store.setPinboards(merged);
+      }
+      setPhase("synced");
+    } catch (err) {
+      console.warn("[sync] manual refresh failed", err);
+      setPhase("error", "Could not refresh from cloud");
+      throw err;
+    }
+  }, [shelfReady, vaultKey, userId, store, setPhase, markClipsSynced]);
+
+  useEffect(() => {
+    if (!shelfReady || !userId) {
+      registerRefreshHandler(null);
+      return;
+    }
+    registerRefreshHandler(pullFromCloud);
+    return () => registerRefreshHandler(null);
+  }, [shelfReady, userId, pullFromCloud, registerRefreshHandler]);
 
   useEffect(() => {
     if (!shelfReady) {
@@ -84,14 +139,25 @@ export function CloudSync() {
     if (!alreadyPulled) {
       setPhase("pulling", "Restoring from cloud…");
     } else {
+      // Quiet incremental catch-up; UI stays on synced unless something arrives.
       setPhase("synced");
     }
 
     void (async () => {
       try {
         void tryRegisterDevice();
+        let applied = 0;
         const [clipsResult, boardsResult] = await Promise.all([
-          tryPullEncryptedClips(key),
+          tryPullEncryptedClips(key, {
+            onPage: (page) => {
+              if (cancelled || page.length === 0) return;
+              applied += page.length;
+              store.upsertClips(page);
+              if (!alreadyPulled) {
+                setPhase("pulling", `Restoring… ${applied} clips`);
+              }
+            },
+          }),
           tryPullEncryptedPinboards(key),
         ]);
         if (cancelled) return;
@@ -111,7 +177,8 @@ export function CloudSync() {
 
         markClipsSynced(remote.map((c) => c.id));
 
-        if (remote.length) store.upsertClips(remote);
+        // Fallback if onPage never ran (empty or race).
+        if (remote.length && applied === 0) store.upsertClips(remote);
         if (remoteBoards.length) {
           const merged = [
             ...store.pinboards.filter((b) => !remoteBoards.some((r) => r.id === b.id)),
@@ -198,19 +265,29 @@ export function CloudSync() {
     let cancelled = false;
     const pushOne = async (clip: ClipItem) => {
       if (clip.deletedAt) {
-        deletedPushRef.current.add(clip.id);
+        // Only mark pushed after success — otherwise a failed delete never retries.
         const result = await tryPushEncryptedClip(clip, key);
-        if (!cancelled && result === "pushed") markClipSynced(clip.id);
+        if (cancelled) return;
+        if (result === "pushed") {
+          deletedPushRef.current.add(clip.id);
+          markClipSynced(clip.id);
+        }
         return;
       }
-      bodyHashRef.current.set(clip.id, clip.contentHash);
+      const prevHash = bodyHashRef.current.get(clip.id);
       const result = await tryPushEncryptedClip(clip, key);
       if (cancelled) return;
       if (result === "pushed") {
         seenRef.current.add(clip.id);
+        bodyHashRef.current.set(clip.id, clip.contentHash);
         markClipSynced(clip.id);
       } else if (result === "local_only") {
+        bodyHashRef.current.set(clip.id, clip.contentHash);
         markClipLocalOnly(clip.id);
+      } else if (result === "error") {
+        // Keep prevHash so the next effect pass still sees a pending change.
+        if (prevHash === undefined) bodyHashRef.current.delete(clip.id);
+        else bodyHashRef.current.set(clip.id, prevHash);
       }
     };
 

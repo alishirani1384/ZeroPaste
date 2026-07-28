@@ -51,28 +51,33 @@ export function subscribeBridge(onState: (s: BridgeState) => void): () => void {
     }, 800);
   };
 
-  try {
-    // EventSource cannot set custom headers — token goes in the query string.
-    es = new EventSource(bridgeUrl("/events", true));
-    es.onmessage = (ev) => {
-      try {
-        onState(JSON.parse(ev.data) as BridgeState);
-      } catch {
-        /* ignore */
-      }
-    };
-    es.onerror = () => {
-      es?.close();
-      es = null;
-      startPoll();
-    };
-  } catch {
-    startPoll();
-  }
+  void (async () => {
+    const { ensureBridgeBoot, bridgeUrl } = await import("./bridge-client");
+    await ensureBridgeBoot();
+    if (closed) return;
 
-  void fetchBridgeState().then((s) => {
+    try {
+      // EventSource cannot set custom headers — token goes in the query string.
+      es = new EventSource(bridgeUrl("/events", true));
+      es.onmessage = (ev) => {
+        try {
+          onState(JSON.parse(ev.data) as BridgeState);
+        } catch {
+          /* ignore */
+        }
+      };
+      es.onerror = () => {
+        es?.close();
+        es = null;
+        startPoll();
+      };
+    } catch {
+      startPoll();
+    }
+
+    const s = await fetchBridgeState();
     if (!closed) onState(s ?? FALLBACK_STATE);
-  });
+  })();
 
   return () => {
     closed = true;
