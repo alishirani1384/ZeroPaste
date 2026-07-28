@@ -1,7 +1,5 @@
 <p align="center">
   <img src="assets/logo.png" alt="ZeroPaste logo" width="88" height="88" align="absmiddle" />
-  &nbsp;&nbsp;
-  <span style="font-size: 3.1em; font-weight: 800; letter-spacing: -0.04em; vertical-align: middle;">ZeroPaste</span>
 </p>
 
 <p align="center">
