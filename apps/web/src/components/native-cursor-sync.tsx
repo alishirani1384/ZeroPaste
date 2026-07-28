@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-const BRIDGE = "http://127.0.0.1:47821";
+import { bridgeFetch } from "@/lib/bridge-client";
 
 /**
  * Drive the Win32 cursor from CSS, because Electrobun CEF OSR does not.
@@ -16,9 +16,8 @@ export function NativeCursorSync() {
     const send = (cursor: string) => {
       if (cursor === last) return;
       last = cursor;
-      void fetch(`${BRIDGE}/cursor`, {
+      void bridgeFetch("/cursor", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cursor }),
         keepalive: true,
       }).catch(() => {

@@ -16,7 +16,8 @@ let lastFingerprint = "";
 let timer: ReturnType<typeof setInterval> | null = null;
 
 function fingerprint(formats: string[], text: string | null, imageLen: number): string {
-  return `${formats.sort().join(",")}|${text?.slice(0, 2000) ?? ""}|img:${imageLen}`;
+  const t = text ?? "";
+  return `${formats.sort().join(",")}|${t.length}|${t.slice(0, 2000)}|${t.slice(-200)}|img:${imageLen}`;
 }
 
 async function pollOnce() {

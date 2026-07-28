@@ -3,7 +3,7 @@
  * so Windows reboot / autostart still restores account + unlock.
  */
 
-const BRIDGE = "http://127.0.0.1:47821";
+import { bridgeFetch } from "./bridge-client";
 
 /** Keys we keep durable across WebView2 cold starts. */
 export const DURABLE_KEY_PREFIXES = [
@@ -39,7 +39,7 @@ export async function hydrateWebSessionFromHost(): Promise<boolean> {
     return false;
   }
   try {
-    const res = await fetch(`${BRIDGE}/web-session`, { cache: "no-store" });
+    const res = await bridgeFetch("/web-session");
     if (!res.ok) {
       hydrateDone = true;
       return false;
@@ -106,9 +106,8 @@ export async function flushHostSessionNow() {
   flushing = true;
   try {
     const keys = collectDurableKeys();
-    await fetch(`${BRIDGE}/web-session`, {
+    await bridgeFetch("/web-session", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ keys }),
     });
   } catch {

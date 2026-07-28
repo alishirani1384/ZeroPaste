@@ -1,5 +1,7 @@
 import type { ClipItem, Pinboard } from "@paste/clipboard-core";
 
+import { bridgeFetch, bridgeUrl, getBridgeToken } from "./bridge-client";
+
 export type BridgeState = {
   clips: ClipItem[];
   pinboards: Pinboard[];
@@ -8,8 +10,6 @@ export type BridgeState = {
   captureEnabled?: boolean;
   hostWarnings?: string[];
 };
-
-const BRIDGE = "http://127.0.0.1:47821";
 
 export const FALLBACK_STATE: BridgeState = {
   clips: [],
@@ -30,7 +30,7 @@ export const FALLBACK_STATE: BridgeState = {
 
 export async function fetchBridgeState(): Promise<BridgeState | null> {
   try {
-    const res = await fetch(`${BRIDGE}/state`, { cache: "no-store" });
+    const res = await bridgeFetch("/state");
     if (!res.ok) return null;
     return (await res.json()) as BridgeState;
   } catch {
@@ -52,7 +52,8 @@ export function subscribeBridge(onState: (s: BridgeState) => void): () => void {
   };
 
   try {
-    es = new EventSource(`${BRIDGE}/events`);
+    // EventSource cannot set custom headers — token goes in the query string.
+    es = new EventSource(bridgeUrl("/events", true));
     es.onmessage = (ev) => {
       try {
         onState(JSON.parse(ev.data) as BridgeState);
@@ -82,9 +83,8 @@ export function subscribeBridge(onState: (s: BridgeState) => void): () => void {
 
 export async function pasteClip(id: string, plain = false): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await fetch(`${BRIDGE}/paste`, {
+    const res = await bridgeFetch("/paste", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, plain }),
     });
     if (!res.ok) {
@@ -99,9 +99,8 @@ export async function pasteClip(id: string, plain = false): Promise<{ ok: boolea
 
 export async function dragPaste(id: string): Promise<boolean> {
   try {
-    const res = await fetch(`${BRIDGE}/drag-paste`, {
+    const res = await bridgeFetch("/drag-paste", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
     const data = (await res.json()) as { ok?: boolean };
@@ -113,9 +112,8 @@ export async function dragPaste(id: string): Promise<boolean> {
 
 export async function cancelDragPaste() {
   try {
-    await fetch(`${BRIDGE}/drag-paste`, {
+    await bridgeFetch("/drag-paste", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "cancel" }),
     });
   } catch {
@@ -125,9 +123,8 @@ export async function cancelDragPaste() {
 
 export async function pauseCapture(durationMs: number | null) {
   try {
-    await fetch(`${BRIDGE}/pause`, {
+    await bridgeFetch("/pause", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ durationMs }),
     });
   } catch {
@@ -137,9 +134,8 @@ export async function pauseCapture(durationMs: number | null) {
 
 export async function updateClipBody(id: string, body: string): Promise<boolean> {
   try {
-    const res = await fetch(`${BRIDGE}/clip-update`, {
+    const res = await bridgeFetch("/clip-update", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, body }),
     });
     return res.ok;
@@ -150,9 +146,8 @@ export async function updateClipBody(id: string, body: string): Promise<boolean>
 
 export async function setCaptureEnabled(enabled: boolean) {
   try {
-    await fetch(`${BRIDGE}/capture-enabled`, {
+    await bridgeFetch("/capture-enabled", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled }),
     });
   } catch {
@@ -162,9 +157,8 @@ export async function setCaptureEnabled(enabled: boolean) {
 
 export async function suppressCapture(ms = 5000) {
   try {
-    await fetch(`${BRIDGE}/suppress-capture`, {
+    await bridgeFetch("/suppress-capture", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ms }),
     });
   } catch {
@@ -174,9 +168,8 @@ export async function suppressCapture(ms = 5000) {
 
 export async function createPinboard(name: string, color?: string): Promise<Pinboard | null> {
   try {
-    const res = await fetch(`${BRIDGE}/pinboard`, {
+    const res = await bridgeFetch("/pinboard", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, color }),
     });
     if (!res.ok) return null;
@@ -192,9 +185,8 @@ export async function updatePinboard(
   patch: { name?: string; color?: string },
 ): Promise<Pinboard | null> {
   try {
-    const res = await fetch(`${BRIDGE}/pinboard-update`, {
+    const res = await bridgeFetch("/pinboard-update", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, ...patch }),
     });
     if (!res.ok) return null;
@@ -207,9 +199,8 @@ export async function updatePinboard(
 
 export async function deletePinboard(id: string): Promise<boolean> {
   try {
-    const res = await fetch(`${BRIDGE}/pinboard-delete`, {
+    const res = await bridgeFetch("/pinboard-delete", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
     return res.ok;
@@ -220,9 +211,19 @@ export async function deletePinboard(id: string): Promise<boolean> {
 
 export async function pinClipToBoard(clipId: string, boardId: string) {
   try {
-    await fetch(`${BRIDGE}/pin-clip`, {
+    await bridgeFetch("/pin-clip", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clipId, boardId }),
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function unpinClipFromBoard(clipId: string, boardId: string) {
+  try {
+    await bridgeFetch("/unpin-clip", {
+      method: "POST",
       body: JSON.stringify({ clipId, boardId }),
     });
   } catch {
@@ -232,9 +233,8 @@ export async function pinClipToBoard(clipId: string, boardId: string) {
 
 export async function mergeClipsFromCloud(clips: ClipItem[]): Promise<boolean> {
   try {
-    const res = await fetch(`${BRIDGE}/clips-merge`, {
+    const res = await bridgeFetch("/clips-merge", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ clips }),
     });
     return res.ok;
@@ -245,9 +245,8 @@ export async function mergeClipsFromCloud(clips: ClipItem[]): Promise<boolean> {
 
 export async function upsertClipFromCloud(clip: ClipItem): Promise<boolean> {
   try {
-    const res = await fetch(`${BRIDGE}/clip-upsert`, {
+    const res = await bridgeFetch("/clip-upsert", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ clip }),
     });
     return res.ok;
@@ -258,9 +257,8 @@ export async function upsertClipFromCloud(clip: ClipItem): Promise<boolean> {
 
 export async function mergePinboardsFromCloud(pinboards: Pinboard[]): Promise<boolean> {
   try {
-    const res = await fetch(`${BRIDGE}/pinboards-merge`, {
+    const res = await bridgeFetch("/pinboards-merge", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pinboards }),
     });
     return res.ok;
@@ -271,7 +269,7 @@ export async function mergePinboardsFromCloud(pinboards: Pinboard[]): Promise<bo
 
 export async function getAutostartEnabled(): Promise<boolean | null> {
   try {
-    const res = await fetch(`${BRIDGE}/autostart`, { cache: "no-store" });
+    const res = await bridgeFetch("/autostart");
     if (!res.ok) return null;
     const data = (await res.json()) as { enabled?: boolean };
     return Boolean(data.enabled);
@@ -282,9 +280,8 @@ export async function getAutostartEnabled(): Promise<boolean | null> {
 
 export async function setAutostartEnabled(enabled: boolean): Promise<boolean> {
   try {
-    const res = await fetch(`${BRIDGE}/autostart`, {
+    const res = await bridgeFetch("/autostart", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled }),
     });
     return res.ok;
@@ -295,9 +292,8 @@ export async function setAutostartEnabled(enabled: boolean): Promise<boolean> {
 
 export async function deleteClip(id: string) {
   try {
-    await fetch(`${BRIDGE}/delete`, {
+    await bridgeFetch("/delete", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
   } catch {
@@ -309,9 +305,8 @@ export type DesktopWindowMode = "panel" | "vault";
 
 export async function setDesktopWindowMode(mode: DesktopWindowMode) {
   try {
-    const res = await fetch(`${BRIDGE}/window-mode`, {
+    const res = await bridgeFetch("/window-mode", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
     });
     if (!res.ok) console.warn("[ZeroPaste] window-mode failed", res.status);
@@ -323,9 +318,8 @@ export async function setDesktopWindowMode(mode: DesktopWindowMode) {
 /** Hide the desktop window (hotkey brings it back). No-op in browser preview. */
 export async function hideDesktopWindow() {
   try {
-    const res = await fetch(`${BRIDGE}/window-hide`, {
+    const res = await bridgeFetch("/window-hide", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: "{}",
     });
     if (!res.ok) console.warn("[ZeroPaste] window-hide failed", res.status);
@@ -340,9 +334,8 @@ export async function hideDesktopWindow() {
  */
 export async function setDesktopKeyboardFocus(enabled: boolean) {
   try {
-    await fetch(`${BRIDGE}/keyboard-focus`, {
+    await bridgeFetch("/keyboard-focus", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled }),
     });
   } catch {
@@ -352,9 +345,8 @@ export async function setDesktopKeyboardFocus(enabled: boolean) {
 
 export async function reorderClips(ids: string[]): Promise<boolean> {
   try {
-    const res = await fetch(`${BRIDGE}/clips-reorder`, {
+    const res = await bridgeFetch("/clips-reorder", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids }),
     });
     return res.ok;
@@ -363,4 +355,5 @@ export async function reorderClips(ids: string[]): Promise<boolean> {
   }
 }
 
+export { getBridgeToken };
 export { fitDesktopWindow, observeDesktopFit, anchorForMode } from "./window-fit";

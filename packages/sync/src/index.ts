@@ -1,7 +1,7 @@
 import type { ClipItem } from "@paste/clipboard-core";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { decryptClip, encryptClip } from "./clip-crypto";
+import { encryptClip } from "./clip-crypto";
 import { getSyncStorage, type SyncStorage } from "./storage";
 import type { ClipRow } from "./types";
 
@@ -80,8 +80,9 @@ export function subscribeClips(
   client: SupabaseClient,
   userId: string,
   onChange: (row: ClipRow) => void,
+  onStatus?: (status: string, err?: Error) => void,
 ) {
-  return client
+  const channel = client
     .channel(`clips:${userId}`)
     .on(
       "postgres_changes",
@@ -90,8 +91,13 @@ export function subscribeClips(
         const row = (payload.new ?? payload.old) as ClipRow | undefined;
         if (row) onChange(row);
       },
-    )
-    .subscribe();
+    );
+  if (onStatus) {
+    channel.subscribe(onStatus);
+  } else {
+    channel.subscribe();
+  }
+  return channel;
 }
 
 export { pullClips } from "./pull";
@@ -117,6 +123,7 @@ export {
 export {
   pushPinboard,
   pullPinboards,
+  softDeleteRemotePinboard,
   isSyncablePinboard,
   type PinboardRow,
 } from "./pinboard-sync";

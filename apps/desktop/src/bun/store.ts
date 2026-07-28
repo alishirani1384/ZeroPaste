@@ -91,7 +91,8 @@ export function noteClipboardFingerprint(
   text: string | null,
   imageLen: number,
 ) {
-  externalFingerprint = `${formats.sort().join(",")}|${text?.slice(0, 2000) ?? ""}|img:${imageLen}`;
+  const t = text ?? "";
+  externalFingerprint = `${formats.sort().join(",")}|${t.length}|${t.slice(0, 2000)}|${t.slice(-200)}|img:${imageLen}`;
 }
 
 export function takeExternalFingerprint(): string | null {
@@ -248,19 +249,22 @@ export function updatePinboard(
   return updated;
 }
 
-/** Remove a custom pinboard and unpin clips from it. History cannot be deleted. */
+/** Soft-delete a custom pinboard and unpin clips from it. History cannot be deleted. */
 export function deletePinboard(id: string): boolean {
   if (id === "history") return false;
-  if (!state.pinboards.some((b) => b.id === id)) return false;
+  if (!state.pinboards.some((b) => b.id === id && !b.deletedAt)) return false;
+  const now = new Date().toISOString();
   state = {
     ...state,
-    pinboards: state.pinboards.filter((b) => b.id !== id),
+    pinboards: state.pinboards.map((b) =>
+      b.id === id ? { ...b, deletedAt: now } : b,
+    ),
     clips: state.clips.map((c) => {
       if (!c.pinnedBoardIds.includes(id)) return c;
       return {
         ...c,
         pinnedBoardIds: c.pinnedBoardIds.filter((bid) => bid !== id),
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
       };
     }),
   };
@@ -277,6 +281,22 @@ export function pinClipToBoard(clipId: string, boardId: string) {
       return {
         ...c,
         pinnedBoardIds: [...c.pinnedBoardIds, boardId],
+        updatedAt: new Date().toISOString(),
+      };
+    }),
+  };
+  emit();
+}
+
+export function unpinClipFromBoard(clipId: string, boardId: string) {
+  state = {
+    ...state,
+    clips: state.clips.map((c) => {
+      if (c.id !== clipId || c.deletedAt) return c;
+      if (!c.pinnedBoardIds.includes(boardId)) return c;
+      return {
+        ...c,
+        pinnedBoardIds: c.pinnedBoardIds.filter((bid) => bid !== boardId),
         updatedAt: new Date().toISOString(),
       };
     }),
@@ -310,19 +330,23 @@ export function reorderClips(visibleOrderedIds: string[]) {
 }
 
 export function replaceClipsFromCloud(clips: ClipItem[]) {
+  const existingOrder = state.clips.map((c) => c.id);
   const byId = new Map(state.clips.map((c) => [c.id, c]));
+  const incomingNewIds: string[] = [];
   for (const clip of clips) {
     const prev = byId.get(clip.id);
+    if (!prev) incomingNewIds.push(clip.id);
     if (!prev || new Date(clip.updatedAt).getTime() >= new Date(prev.updatedAt).getTime()) {
       byId.set(clip.id, clip);
     }
   }
-  const merged = [...byId.values()].sort((a, b) => {
-    const ad = a.deletedAt ? 1 : 0;
-    const bd = b.deletedAt ? 1 : 0;
-    if (ad !== bd) return ad - bd;
-    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-  });
+  const newOnes = incomingNewIds
+    .map((id) => byId.get(id)!)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  const rest = existingOrder.map((id) => byId.get(id)!).filter(Boolean);
+  const merged = [...newOnes, ...rest].sort(
+    (a, b) => (a.deletedAt ? 1 : 0) - (b.deletedAt ? 1 : 0),
+  );
   state = { ...state, clips: merged };
   emit();
 }
@@ -346,10 +370,21 @@ export function replacePinboardsFromCloud(boards: Pinboard[]) {
   }
   for (const board of boards) {
     if (board.id === "history") continue;
-    byId.set(board.id, board);
+    const prev = byId.get(board.id);
+    if (board.deletedAt) {
+      byId.set(board.id, board);
+      continue;
+    }
+    if (!prev || !prev.deletedAt) {
+      byId.set(board.id, board);
+    }
   }
 
-  const merged = [...byId.values()].sort((a, b) => a.sortOrder - b.sortOrder);
-  state = { ...state, pinboards: merged };
+  const merged = [...byId.values()]
+    .filter((b) => b.id === "history" || !b.deletedAt)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  // Keep tombstones in state so sync can push deletes, but UI filters them.
+  const tombstones = [...byId.values()].filter((b) => b.deletedAt);
+  state = { ...state, pinboards: [...merged, ...tombstones] };
   emit();
 }

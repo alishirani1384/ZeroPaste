@@ -1,7 +1,9 @@
-import { ARGON2_OPTS, setArgon2idDerive, toB64, fromB64 } from "@paste/crypto";
+import { ARGON2_OPTS, setArgon2idDerive, toB64, fromB64, type Argon2Opts } from "@paste/crypto";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
+
+import { HASH_WASM_UMD } from "@/components/argon2-umd.gen";
 
 type Pending = {
   id: string;
@@ -22,7 +24,11 @@ function whenBridgeReady(): Promise<void> {
   return new Promise((resolve) => readyWaiters.push(resolve));
 }
 
-async function deriveViaWebView(password: Uint8Array, salt: Uint8Array): Promise<Uint8Array> {
+async function deriveViaWebView(
+  password: Uint8Array,
+  salt: Uint8Array,
+  opts: Argon2Opts = ARGON2_OPTS,
+): Promise<Uint8Array> {
   await whenBridgeReady();
   if (!sendToWebView) {
     throw new Error("Argon2 WebView bridge is not mounted");
@@ -57,10 +63,10 @@ async function deriveViaWebView(password: Uint8Array, salt: Uint8Array): Promise
       id,
       passwordB64,
       saltB64,
-      t: ARGON2_OPTS.t,
-      m: ARGON2_OPTS.m,
-      p: ARGON2_OPTS.p,
-      dkLen: ARGON2_OPTS.dkLen,
+      t: opts.t,
+      m: opts.m,
+      p: opts.p,
+      dkLen: opts.dkLen,
     });
 
     sendToWebView!(
@@ -143,11 +149,12 @@ const styles = StyleSheet.create({
   hide: { width: 0, height: 0, opacity: 0, position: "absolute" },
 });
 
-/** Self-contained page: System WebView has WASM; loads hash-wasm UMD from CDN. */
+/** Self-contained page: System WebView has WASM; hash-wasm UMD is bundled inline (no CDN). */
 const ARGON2_HTML = `<!DOCTYPE html>
 <html>
   <head><meta charset="utf-8" /></head>
   <body>
+    <script>${HASH_WASM_UMD}</script>
     <script>
       function b64ToBytes(b64) {
         var bin = atob(b64);
@@ -167,7 +174,7 @@ const ARGON2_HTML = `<!DOCTYPE html>
       window.__zeropasteArgon2 = function (raw) {
         var msg = typeof raw === "string" ? JSON.parse(raw) : raw;
         if (!window.hashwasm || !window.hashwasm.argon2id) {
-          post({ type: "argon2id-result", id: msg.id, ok: false, error: "hash-wasm failed to load (check network)" });
+          post({ type: "argon2id-result", id: msg.id, ok: false, error: "hash-wasm failed to initialize" });
           return;
         }
         window.hashwasm.argon2id({
@@ -186,11 +193,7 @@ const ARGON2_HTML = `<!DOCTYPE html>
         });
       };
 
-      var s = document.createElement("script");
-      s.src = "https://cdn.jsdelivr.net/npm/hash-wasm@4.12.0/dist/index.umd.js";
-      s.onload = function () { post({ type: "ready" }); };
-      s.onerror = function () { post({ type: "ready" }); /* still mark ready so RN surfaces load errors on derive */ };
-      document.body.appendChild(s);
+      post({ type: "ready" });
     </script>
   </body>
 </html>`;

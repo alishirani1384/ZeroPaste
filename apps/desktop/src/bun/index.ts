@@ -7,7 +7,7 @@ import {
 } from "electrobun/bun";
 import { join } from "node:path";
 
-import { startBridgeServer } from "./bridge-server";
+import { getBridgeBootInfo, startBridgeServer } from "./bridge-server";
 import { startClipboardPoller } from "./clipboard-poller";
 import { isAutostartLaunch } from "./autostart";
 import { captureFocusTarget } from "./focus-target";
@@ -86,10 +86,24 @@ async function getMainViewUrl(): Promise<string> {
   return "views://mainview/index.html";
 }
 
-startBridgeServer();
+await startBridgeServer();
 startClipboardPoller();
 
+const boot = getBridgeBootInfo();
+
 const url = await getMainViewUrl();
+const urlWithAuth = (() => {
+  try {
+    const u = new URL(url);
+    u.searchParams.set("bridgeToken", boot.token);
+    u.searchParams.set("bridgePort", String(boot.port));
+    return u.toString();
+  } catch {
+    // views:// scheme may not parse as URL in all runtimes
+    const sep = url.includes("?") ? "&" : "?";
+    return `${url}${sep}bridgeToken=${encodeURIComponent(boot.token)}&bridgePort=${boot.port}`;
+  }
+})();
 
 // Create at MAX canvas (hit-test ceiling). /window-fit shrinks to the UI.
 const size = resolveWindowSize();
@@ -103,7 +117,7 @@ console.log("[ZeroPaste] initial frame (create=max canvas)", initial);
  */
 const win = new BrowserWindow({
   title: "ZeroPaste",
-  url,
+  url: urlWithAuth,
   titleBarStyle: "hidden",
   transparent: true,
   passthrough: true,

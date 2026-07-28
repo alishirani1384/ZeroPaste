@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Alert } from "react-native";
+import type { ClipItem } from "@paste/clipboard-core";
 import { fetchVaultMetaBlob, upsertVaultMetaBlob } from "@paste/sync";
 
 import { useAuth } from "@/contexts/auth-context";
@@ -12,6 +13,7 @@ import {
   tryPushEncryptedClip,
   tryPushEncryptedPinboard,
   tryRegisterDevice,
+  trySoftDeletePinboard,
   trySubscribeEncryptedClips,
 } from "@/lib/sync-session";
 
@@ -34,6 +36,8 @@ export function CloudSync() {
   const bodyHashRef = useRef(new Map<string, string>());
   const deletedPushRef = useRef(new Set<string>());
   const pinboardSeenRef = useRef(new Set<string>());
+  const pulledRef = useRef(false);
+  const prevUserIdRef = useRef<string | null>(null);
 
   const shelfReady = unlocked && !recoveryKeyOnce && !!vaultKey;
 
@@ -51,6 +55,13 @@ export function CloudSync() {
     }
   }, [shelfReady, userId, auth.offlineChosen, auth.configured, setPhase]);
 
+  // Sign-out clears this account's "already pulled" mark so the next sign-in re-pulls.
+  useEffect(() => {
+    const prev = prevUserIdRef.current;
+    if (prev && !userId) pulledUsers.delete(prev);
+    prevUserIdRef.current = userId;
+  }, [userId]);
+
   // Upload vault meta wraps once unlocked
   useEffect(() => {
     if (!shelfReady || !meta || !auth.session || !auth.client) return;
@@ -61,7 +72,10 @@ export function CloudSync() {
 
   // Initial pull + realtime
   useEffect(() => {
-    if (!shelfReady || !vaultKey || !userId) return;
+    if (!shelfReady || !vaultKey || !userId) {
+      pulledRef.current = false;
+      return;
+    }
 
     let cancelled = false;
     const key = vaultKey;
@@ -76,12 +90,17 @@ export function CloudSync() {
     void (async () => {
       try {
         void tryRegisterDevice();
-        const [remote, remoteBoards] = await Promise.all([
+        const [clipsResult, boardsResult] = await Promise.all([
           tryPullEncryptedClips(key),
           tryPullEncryptedPinboards(key),
         ]);
         if (cancelled) return;
+        const remote = clipsResult.items;
+        const remoteBoards = boardsResult.boards;
+        const failedCount = clipsResult.failedCount + boardsResult.failedCount;
+
         pulledUsers.add(userId);
+        pulledRef.current = true;
 
         for (const c of remote) {
           seenRef.current.add(c.id);
@@ -104,18 +123,29 @@ export function CloudSync() {
         if (!alreadyPulled) {
           for (const board of store.pinboards) {
             if (board.id === "history" || pinboardSeenRef.current.has(board.id)) continue;
-            void tryPushEncryptedPinboard(board, key);
+            pinboardSeenRef.current.add(board.id);
+            if (board.deletedAt) {
+              void trySoftDeletePinboard(board, key);
+            } else {
+              void tryPushEncryptedPinboard(board, key);
+            }
           }
         }
 
         setPhase("synced");
+
+        if (failedCount > 0) {
+          Alert.alert(
+            "Sync",
+            `Could not decrypt ${failedCount} item${failedCount === 1 ? "" : "s"} from the cloud.`,
+          );
+        }
       } catch (err) {
         console.warn("[sync] initial pull failed", err);
+        pulledRef.current = true;
+        setPhase("error", "Could not restore clips from cloud");
         if (!alreadyPulled) {
-          setPhase("error", "Could not restore clips from cloud");
           Alert.alert("Sync", "Could not restore clips from cloud. Local history still works.");
-        } else {
-          setPhase("synced");
         }
       }
     })();
@@ -135,31 +165,70 @@ export function CloudSync() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- pull once per unlock session
   }, [shelfReady, vaultKey, userId]);
 
-  // Push local changes
+  // Push local changes — wait for the initial pull so we don't race a fresh cloud restore.
   useEffect(() => {
-    if (!shelfReady || !vaultKey || !userId) return;
-    for (const clip of store.clips) {
-      if (clip.deletedAt) {
-        if (deletedPushRef.current.has(clip.id)) continue;
-        deletedPushRef.current.add(clip.id);
-        void tryPushEncryptedClip(clip, vaultKey).then((result) => {
-          if (result === "pushed") markClipSynced(clip.id);
+    if (!shelfReady || !vaultKey || !userId || !pulledRef.current) return;
+    const key = vaultKey;
+
+    // Pinboards: push creates + soft-deletes
+    for (const board of store.pinboards) {
+      if (board.id === "history") continue;
+      if (board.deletedAt) {
+        if (pinboardSeenRef.current.has(`del:${board.id}`)) continue;
+        pinboardSeenRef.current.add(`del:${board.id}`);
+        void trySoftDeletePinboard(board, key).then((result) => {
+          if (result === "error") pinboardSeenRef.current.delete(`del:${board.id}`);
         });
         continue;
       }
-      const prevHash = bodyHashRef.current.get(clip.id);
-      if (prevHash === clip.contentHash) continue;
-      bodyHashRef.current.set(clip.id, clip.contentHash);
-      void tryPushEncryptedClip(clip, vaultKey).then((result) => {
-        if (result === "pushed") {
-          seenRef.current.add(clip.id);
-          markClipSynced(clip.id);
-        } else if (result === "local_only") {
-          markClipLocalOnly(clip.id);
-        }
+      if (pinboardSeenRef.current.has(board.id)) continue;
+      pinboardSeenRef.current.add(board.id);
+      void tryPushEncryptedPinboard(board, key).then((result) => {
+        if (result === "error") pinboardSeenRef.current.delete(board.id);
       });
     }
-  }, [store.clips, shelfReady, vaultKey, userId, markClipSynced, markClipLocalOnly]);
+
+    const pending = store.clips.filter((clip) =>
+      clip.deletedAt
+        ? !deletedPushRef.current.has(clip.id)
+        : bodyHashRef.current.get(clip.id) !== clip.contentHash,
+    );
+    if (pending.length === 0) return;
+
+    let cancelled = false;
+    const pushOne = async (clip: ClipItem) => {
+      if (clip.deletedAt) {
+        deletedPushRef.current.add(clip.id);
+        const result = await tryPushEncryptedClip(clip, key);
+        if (!cancelled && result === "pushed") markClipSynced(clip.id);
+        return;
+      }
+      bodyHashRef.current.set(clip.id, clip.contentHash);
+      const result = await tryPushEncryptedClip(clip, key);
+      if (cancelled) return;
+      if (result === "pushed") {
+        seenRef.current.add(clip.id);
+        markClipSynced(clip.id);
+      } else if (result === "local_only") {
+        markClipLocalOnly(clip.id);
+      }
+    };
+
+    // Limit concurrent pushes so a burst of new clips doesn't flood Supabase.
+    const CONCURRENCY = 3;
+    let cursor = 0;
+    const worker = async () => {
+      while (!cancelled && cursor < pending.length) {
+        const clip = pending[cursor++]!;
+        await pushOne(clip);
+      }
+    };
+    void Promise.all(Array.from({ length: Math.min(CONCURRENCY, pending.length) }, worker));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [store.clips, store.pinboards, shelfReady, vaultKey, userId, markClipSynced, markClipLocalOnly]);
 
   // Reset badge map when signing out
   useEffect(() => {

@@ -11,7 +11,7 @@ ZeroPaste assumes Supabase (Postgres, Realtime, Storage) and network observers a
 - Each clip uses a random content key, encrypted with **AES-256-GCM**, then the content key is wrapped with `vault_key`.
 - Images/files are encrypted client-side before upload to Storage.
 - **Search runs locally** over a decrypted cache (accurate FTS). The server never receives searchable plaintext indexes in v1.
-- Device linking stores a wrapped vault key in OS secure storage (DPAPI / Keystore / libsecret).
+- Device linking / desktop host secrets: Android uses SecureStore (Keystore). Desktop seals `~/.zeropaste` session and clipboard state with DPAPI (Windows CurrentUser) or AES-GCM keyed by a mode-0600 host key (Linux/macOS). The local bridge requires a per-install token (injected into the WebView); CORS is origin-locked (no `*`).
 
 ## What stays plaintext on the server
 

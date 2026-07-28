@@ -1,3 +1,5 @@
+import { bridgeFetch } from "./bridge-client";
+
 export type LinkPreview = {
   title?: string;
   image?: string;
@@ -7,7 +9,6 @@ export type LinkPreview = {
 
 const memory = new Map<string, LinkPreview | null>();
 const KEY = (url: string) => `zp:og:${url}`;
-const BRIDGE = "http://127.0.0.1:47821";
 
 /** Cached OG preview — prefers desktop bridge (no CORS), then localStorage. */
 export async function getLinkPreview(url: string): Promise<LinkPreview | null> {
@@ -28,9 +29,8 @@ export async function getLinkPreview(url: string): Promise<LinkPreview | null> {
 
   let preview: LinkPreview | null = null;
   try {
-    const res = await fetch(`${BRIDGE}/link-preview`, {
+    const res = await bridgeFetch("/link-preview", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: key }),
     });
     if (res.ok) {

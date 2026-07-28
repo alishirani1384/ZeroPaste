@@ -1,13 +1,12 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 
-const BRIDGE = "http://127.0.0.1:47821";
+import { bridgeFetch } from "./bridge-client";
 
 async function postDrag(phase: "start" | "stop") {
   try {
     // Host reads OS cursor itself — do not send screenX/Y (HiDPI mismatch).
-    const res = await fetch(`${BRIDGE}/window-drag`, {
+    const res = await bridgeFetch("/window-drag", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phase }),
     });
     console.info("[ZeroPaste] drag", phase, res.status);

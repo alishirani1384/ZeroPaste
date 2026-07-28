@@ -5,6 +5,9 @@
 #   2. Commit + push to main
 #   3. CI creates android-vX.Y.Z / desktop-vX.Y.Z only for apps whose version changed
 #
+# Android CI runs `bun run gen:argon2` after install so the Argon2 WebView bundle
+# is always regenerated from the pinned hash-wasm package (no CDN at unlock).
+#
 # No manual git tags required. Re-pushing the same version is a no-op (tag exists).
 #
 # Required secrets:
@@ -176,6 +179,11 @@ jobs:
 
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
+
+      # Inline hash-wasm into the Argon2 WebView bridge (no CDN at unlock time).
+      - name: Generate Argon2 WASM bundle
+        working-directory: apps/native
+        run: bun run gen:argon2
 
       - name: Write apps/native/.env from secrets
         working-directory: apps/native

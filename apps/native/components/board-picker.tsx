@@ -13,6 +13,8 @@ type Props = {
   activeId: string;
   /** When pinning a clip, hide History and require a custom board. */
   pinMode?: boolean;
+  /** Board ids the clip being pinned is already pinned to — toggles to unpin. */
+  pinnedIds?: string[];
   onClose: () => void;
   onSelect: (id: string) => void;
   onCreate: (name: string, color: string) => void;
@@ -21,7 +23,16 @@ type Props = {
 const COLORS = ["#C43B3B", "#E8A838", "#3D9A6A", "#3B82C4", "#8B5CF6", "#EC4899"];
 
 /** Lightweight top-left dropdown — no dimmed overlay. */
-export function BoardPicker({ visible, boards, activeId, pinMode, onClose, onSelect, onCreate }: Props) {
+export function BoardPicker({
+  visible,
+  boards,
+  activeId,
+  pinMode,
+  pinnedIds,
+  onClose,
+  onSelect,
+  onCreate,
+}: Props) {
   const { isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
   const ink = isDark ? colors.inkDark : colors.inkLight;
@@ -63,22 +74,25 @@ export function BoardPicker({ visible, boards, activeId, pinMode, onClose, onSel
             </Pressable>
           ) : null}
 
-          {boards.map((b) => (
-            <Pressable
-              key={b.id}
-              style={[styles.row, activeId === b.id && styles.activeRow]}
-              onPress={() => {
-                onSelect(b.id);
-                onClose();
-              }}
-            >
-              <View style={[styles.dot, { backgroundColor: b.color }]} />
-              <Text style={[styles.rowLabel, { color: ink }]}>{b.name}</Text>
-              {activeId === b.id ? (
-                <Ionicons name="checkmark" size={18} color={colors.crimson} />
-              ) : null}
-            </Pressable>
-          ))}
+          {boards.map((b) => {
+            const pinned = pinMode && !!pinnedIds?.includes(b.id);
+            return (
+              <Pressable
+                key={b.id}
+                style={[styles.row, (pinned || activeId === b.id) && styles.activeRow]}
+                onPress={() => {
+                  onSelect(b.id);
+                  onClose();
+                }}
+              >
+                <View style={[styles.dot, { backgroundColor: b.color }]} />
+                <Text style={[styles.rowLabel, { color: ink }]}>{b.name}</Text>
+                {pinned || activeId === b.id ? (
+                  <Ionicons name="checkmark" size={18} color={colors.crimson} />
+                ) : null}
+              </Pressable>
+            );
+          })}
 
           {creating ? (
             <View style={styles.createBox}>

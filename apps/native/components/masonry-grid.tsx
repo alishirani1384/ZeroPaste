@@ -1,6 +1,14 @@
 import type { ClipItem } from "@paste/clipboard-core";
-import { useMemo, type ReactNode } from "react";
-import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { useMemo, useState, type ReactNode } from "react";
+import {
+  ScrollView,
+  StyleSheet,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
 
 type Props = {
   data: ClipItem[];
@@ -35,8 +43,15 @@ function estimateHeight(clip: ClipItem): number {
   }
 }
 
+const INITIAL_RENDER_LIMIT = 40;
+const RENDER_LIMIT_STEP = 40;
+const NEAR_BOTTOM_PX = 600;
+
 /**
  * Two-column masonry: shortest-column packing, independent card heights.
+ * Renders incrementally (40 cards at a time) since the grid isn't virtualized —
+ * this also keeps expensive per-card work (e.g. link preview fetches) capped to
+ * cards that are actually rendered instead of firing for the whole history.
  */
 export function MasonryGrid({
   data,
@@ -46,10 +61,14 @@ export function MasonryGrid({
   ListEmptyComponent,
   renderItem,
 }: Props) {
+  const [renderLimit, setRenderLimit] = useState(INITIAL_RENDER_LIMIT);
+
+  const visible = useMemo(() => data.slice(0, renderLimit), [data, renderLimit]);
+
   const cols = useMemo(() => {
     const heights = Array.from({ length: columns }, () => 0);
     const buckets: ClipItem[][] = Array.from({ length: columns }, () => []);
-    for (const item of data) {
+    for (const item of visible) {
       let shortest = 0;
       for (let i = 1; i < columns; i++) {
         if (heights[i]! < heights[shortest]!) shortest = i;
@@ -58,7 +77,16 @@ export function MasonryGrid({
       heights[shortest]! += estimateHeight(item) + gutter;
     }
     return buckets;
-  }, [columns, data, gutter]);
+  }, [columns, visible, gutter]);
+
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (renderLimit >= data.length) return;
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    if (distanceFromBottom < NEAR_BOTTOM_PX) {
+      setRenderLimit((n) => Math.min(data.length, n + RENDER_LIMIT_STEP));
+    }
+  };
 
   if (data.length === 0) {
     return (
@@ -69,7 +97,12 @@ export function MasonryGrid({
   }
 
   return (
-    <ScrollView contentContainerStyle={contentContainerStyle} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={contentContainerStyle}
+      showsVerticalScrollIndicator={false}
+      onScroll={onScroll}
+      scrollEventThrottle={100}
+    >
       <View style={[styles.row, { gap: gutter }]}>
         {cols.map((col, colIndex) => (
           <View key={colIndex} style={styles.col}>

@@ -13,8 +13,27 @@ async function argon2idWasmBinary(
   return new Uint8Array(hash as unknown as ArrayLike<number>);
 }
 
-/** Must stay identical across desktop + mobile so cloud vaults unlock everywhere. */
-export const ARGON2_OPTS = {
+export type Argon2Opts = {
+  t: number;
+  m: number;
+  p: number;
+  dkLen: number;
+};
+
+/**
+ * Used for new vaults on desktop + mobile so cloud vaults unlock everywhere.
+ * Bumping `m` here does NOT retroactively change existing vaults — they keep
+ * deriving with whatever opts are stored in their meta (see LEGACY_ARGON2_OPTS).
+ */
+export const ARGON2_OPTS: Argon2Opts = {
+  t: 3,
+  m: 128 * 1024,
+  p: 1,
+  dkLen: 32,
+} as const;
+
+/** Opts used by every vault created before the m=128MiB bump — never change these. */
+export const LEGACY_ARGON2_OPTS: Argon2Opts = {
   t: 3,
   m: 64 * 1024,
   p: 1,
@@ -33,7 +52,11 @@ export type WrappedKey = {
   wrapped: string;
 };
 
-export type Argon2idDeriveFn = (password: Uint8Array, salt: Uint8Array) => Promise<Uint8Array>;
+export type Argon2idDeriveFn = (
+  password: Uint8Array,
+  salt: Uint8Array,
+  opts?: Argon2Opts,
+) => Promise<Uint8Array>;
 
 /** Optional host override (e.g. React Native WebView when Hermes has no WebAssembly). */
 let argon2Override: Argon2idDeriveFn | null = null;
@@ -77,9 +100,13 @@ function isReactNative() {
  * Prefer host override (RN WebView) → hash-wasm → @noble (desktop only).
  * Never run @noble Argon2 on RN — it freezes Hermes at m=64MiB.
  */
-async function argon2idDerive(password: Uint8Array, salt: Uint8Array): Promise<Uint8Array> {
+async function argon2idDerive(
+  password: Uint8Array,
+  salt: Uint8Array,
+  opts: Argon2Opts = ARGON2_OPTS,
+): Promise<Uint8Array> {
   if (argon2Override) {
-    return argon2Override(password, salt);
+    return argon2Override(password, salt, opts);
   }
 
   // Hermes has no reliable WebAssembly — never load hash-wasm on RN.
@@ -93,29 +120,31 @@ async function argon2idDerive(password: Uint8Array, salt: Uint8Array): Promise<U
     return await argon2idWasmBinary({
       password,
       salt,
-      parallelism: ARGON2_OPTS.p,
-      iterations: ARGON2_OPTS.t,
-      memorySize: ARGON2_OPTS.m,
-      hashLength: ARGON2_OPTS.dkLen,
+      parallelism: opts.p,
+      iterations: opts.t,
+      memorySize: opts.m,
+      hashLength: opts.dkLen,
     });
   } catch (err) {
     console.warn("[crypto] hash-wasm Argon2 failed, falling back to @noble", err);
-    return argon2idNoble(password, salt, ARGON2_OPTS);
+    return argon2idNoble(password, salt, opts);
   }
 }
 
 export async function deriveKeyFromPassphrase(
   passphrase: string,
   salt: Uint8Array,
+  opts: Argon2Opts = ARGON2_OPTS,
 ): Promise<Uint8Array> {
-  return argon2idDerive(utf8ToBytes(passphrase), salt);
+  return argon2idDerive(utf8ToBytes(passphrase), salt, opts);
 }
 
 export async function deriveKeyFromRecovery(
   recoveryKeyHex: string,
   salt: Uint8Array,
+  opts: Argon2Opts = ARGON2_OPTS,
 ): Promise<Uint8Array> {
-  return argon2idDerive(hexToBytes(recoveryKeyHex.trim()), salt);
+  return argon2idDerive(hexToBytes(recoveryKeyHex.trim()), salt, opts);
 }
 
 /** @deprecated use deriveKeyFromPassphrase */

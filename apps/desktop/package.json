@@ -2,7 +2,7 @@
   "name": "desktop",
   "private": true,
   "type": "module",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "scripts": {
     "start": "electrobun dev",
     "dev:hmr": "concurrently -k -n web,desktop -c cyan,magenta \"bun run hmr\" \"electrobun dev --watch\"",

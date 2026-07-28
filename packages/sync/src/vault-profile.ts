@@ -1,4 +1,6 @@
 import {
+  ARGON2_OPTS,
+  LEGACY_ARGON2_OPTS,
   decryptPayloadText,
   deriveKeyFromPassphrase,
   deriveKeyFromRecovery,
@@ -10,6 +12,7 @@ import {
   fromB64,
   unwrapKey,
   wrapKey,
+  type Argon2Opts,
   type EncryptedEnvelope,
   type WrappedKey,
 } from "@paste/crypto";
@@ -26,6 +29,8 @@ export type LocalVaultMeta = {
   verify: EncryptedEnvelope;
   recoveryHint: string;
   createdAt: string;
+  /** Argon2 opts used to derive this vault's keys. Missing on pre-m=128MiB vaults. */
+  kdf?: Argon2Opts;
 };
 
 export async function createLocalVault(passphrase: string): Promise<{
@@ -50,6 +55,7 @@ export async function createLocalVault(passphrase: string): Promise<{
       verify,
       recoveryHint: `${recoveryKey.slice(0, 8)}…`,
       createdAt: new Date().toISOString(),
+      kdf: ARGON2_OPTS,
     },
   };
 }
@@ -63,7 +69,11 @@ export async function unlockWithPassphrase(
   meta: LocalVaultMeta,
   passphrase: string,
 ): Promise<Uint8Array> {
-  const passKey = await deriveKeyFromPassphrase(passphrase, fromB64(meta.saltB64));
+  const passKey = await deriveKeyFromPassphrase(
+    passphrase,
+    fromB64(meta.saltB64),
+    meta.kdf ?? LEGACY_ARGON2_OPTS,
+  );
   try {
     const vaultKey = unwrapKey(passKey, meta.passphraseWrap);
     assertVault(vaultKey, meta.verify);
@@ -77,7 +87,11 @@ export async function unlockWithRecovery(
   meta: LocalVaultMeta,
   recoveryKeyHex: string,
 ): Promise<Uint8Array> {
-  const recoveryDerived = await deriveKeyFromRecovery(recoveryKeyHex, fromB64(meta.saltB64));
+  const recoveryDerived = await deriveKeyFromRecovery(
+    recoveryKeyHex,
+    fromB64(meta.saltB64),
+    meta.kdf ?? LEGACY_ARGON2_OPTS,
+  );
   try {
     const vaultKey = unwrapKey(recoveryDerived, meta.recoveryWrap);
     assertVault(vaultKey, meta.verify);

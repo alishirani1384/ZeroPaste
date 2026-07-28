@@ -116,7 +116,12 @@ export function HistoryScreen() {
     };
   }, [vault.unlocked, vault.recoveryKeyOnce, ingest, ingestWithRetries]);
 
-  const activeBoard = boardId === "history" ? null : store.pinboards.find((b) => b.id === boardId);
+  const visibleBoards = useMemo(
+    () => store.pinboards.filter((b) => !b.deletedAt),
+    [store.pinboards],
+  );
+
+  const activeBoard = boardId === "history" ? null : visibleBoards.find((b) => b.id === boardId);
   const boardColor = activeBoard?.color ?? null;
 
   const clips = useMemo(() => {
@@ -256,9 +261,10 @@ export function HistoryScreen() {
 
       <BoardPicker
         visible={boardsOpen || !!pinTarget}
-        boards={store.pinboards}
+        boards={visibleBoards}
         activeId={pinTarget ? "" : boardId}
         pinMode={!!pinTarget}
+        pinnedIds={pinTarget?.pinnedBoardIds}
         onClose={() => {
           setBoardsOpen(false);
           setPinTarget(null);
@@ -266,7 +272,11 @@ export function HistoryScreen() {
         onSelect={(id) => {
           if (pinTarget) {
             if (id === "history") return;
-            store.pinClipToBoard(pinTarget.id, id);
+            if (pinTarget.pinnedBoardIds.includes(id)) {
+              store.unpinClipFromBoard(pinTarget.id, id);
+            } else {
+              store.pinClipToBoard(pinTarget.id, id);
+            }
             setPinTarget(null);
             void Haptics.selectionAsync();
             return;

@@ -26,6 +26,7 @@ type ClipStoreValue = {
   setPinboards: (boards: Pinboard[]) => void;
   upsertPinboard: (board: Pinboard) => void;
   pinClipToBoard: (clipId: string, boardId: string) => void;
+  unpinClipFromBoard: (clipId: string, boardId: string) => void;
 };
 
 const ClipStoreContext = createContext<ClipStoreValue | null>(null);
@@ -163,6 +164,21 @@ export function ClipStoreProvider({ children }: { children: ReactNode }) {
     [pinboards, schedulePersist],
   );
 
+  const unpinClipFromBoard = useCallback(
+    (clipId: string, boardId: string) => {
+      setClips((prev) => {
+        const next = prev.map((c) => {
+          if (c.id !== clipId) return c;
+          const pinned = (c.pinnedBoardIds ?? []).filter((id) => id !== boardId);
+          return { ...c, pinnedBoardIds: pinned, updatedAt: new Date().toISOString() };
+        });
+        schedulePersist(next, pinboards);
+        return next;
+      });
+    },
+    [pinboards, schedulePersist],
+  );
+
   const value = useMemo(
     () => ({
       ready,
@@ -175,6 +191,7 @@ export function ClipStoreProvider({ children }: { children: ReactNode }) {
       setPinboards,
       upsertPinboard,
       pinClipToBoard,
+      unpinClipFromBoard,
     }),
     [
       ready,
@@ -187,6 +204,7 @@ export function ClipStoreProvider({ children }: { children: ReactNode }) {
       setPinboards,
       upsertPinboard,
       pinClipToBoard,
+      unpinClipFromBoard,
     ],
   );
 

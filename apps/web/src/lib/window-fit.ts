@@ -1,6 +1,5 @@
 import type { DesktopWindowMode } from "./bridge";
-
-const BRIDGE = "http://127.0.0.1:47821";
+import { bridgeFetch } from "./bridge-client";
 
 export type FitAnchor = "bottom-center" | "center";
 
@@ -10,9 +9,8 @@ export async function fitDesktopWindow(opts: {
   anchor: FitAnchor;
 }) {
   try {
-    const res = await fetch(`${BRIDGE}/window-fit`, {
+    const res = await bridgeFetch("/window-fit", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         width: Math.ceil(opts.width),
         height: Math.ceil(opts.height),

@@ -12,7 +12,8 @@ export type ClipMenuAction =
   | "copy"
   | "delete"
   | "newPinboard"
-  | { pin: string };
+  | { pin: string }
+  | { unpin: string };
 
 type Props = {
   x: number;
@@ -127,8 +128,7 @@ export function ClipContextMenu({ x, y, clip, boards, onAction, onClose }: Props
               type="button"
               role="menuitem"
               className="zp-ctx-item"
-              onClick={() => run({ pin: b.id })}
-              disabled={pinned}
+              onClick={() => run(pinned ? { unpin: b.id } : { pin: b.id })}
             >
               <span className="zp-ctx-pin-dot" style={{ background: b.color }} aria-hidden />
               <span className="zp-ctx-item-label">{b.name}</span>

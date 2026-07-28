@@ -1,14 +1,16 @@
 /**
  * Persist clipboard history + pinboards + media across restarts.
- * Path: ~/.zeropaste/desktop-state.json (+ media/)
+ * Path: ~/.zeropaste/desktop-state.json (+ media/) — sealed at rest.
  */
 
-import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
+import { mkdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { ClipItem, Pinboard } from "@paste/clipboard-core";
 
+import { atomicWriteFile } from "./atomic-write";
+import { atomicWriteSealed, readMaybeSealed } from "./host-crypto";
 import { mediaUrlFor, putClipMedia, getClipMedia } from "./media-store";
 
 const ROOT = join(homedir(), ".zeropaste");
@@ -32,15 +34,17 @@ async function ensureDirs() {
 export async function loadPersistedState(): Promise<PersistedState | null> {
   try {
     await ensureDirs();
-    const raw = await readFile(STATE_FILE, "utf8");
+    const raw = await readMaybeSealed(STATE_FILE);
     const data = JSON.parse(raw) as PersistedState;
     if (data.version !== 1 || !Array.isArray(data.clips)) return null;
 
-    // Rehydrate image media from disk and rewrite preview URLs for this session.
     for (const clip of data.clips) {
       if (clip.kind !== "image" || clip.deletedAt) continue;
       try {
-        const metaRaw = await readFile(join(MEDIA_DIR, `${clip.id}.json`), "utf8");
+        const { readFile } = await import("node:fs/promises");
+        const metaRaw = await readMaybeSealed(join(MEDIA_DIR, `${clip.id}.json`)).catch(async () =>
+          readFile(join(MEDIA_DIR, `${clip.id}.json`), "utf8"),
+        );
         const meta = JSON.parse(metaRaw) as { mime: string };
         const bytes = new Uint8Array(await readFile(join(MEDIA_DIR, `${clip.id}.bin`)));
         putClipMedia(clip.id, bytes, meta.mime, bytes);
@@ -84,17 +88,16 @@ export async function persistNow(state: {
       pausedUntil: state.pausedUntil,
       compact: state.compact,
     };
-    await writeFile(STATE_FILE, JSON.stringify(payload), "utf8");
+    await atomicWriteSealed(STATE_FILE, JSON.stringify(payload));
 
     for (const clip of state.clips) {
       if (clip.kind !== "image" || clip.deletedAt) continue;
       const media = getClipMedia(clip.id);
       if (!media) continue;
-      await writeFile(join(MEDIA_DIR, `${clip.id}.bin`), media.display);
-      await writeFile(
+      await atomicWriteFile(join(MEDIA_DIR, `${clip.id}.bin`), media.display, { mode: 0o600 });
+      await atomicWriteSealed(
         join(MEDIA_DIR, `${clip.id}.json`),
         JSON.stringify({ mime: media.displayMime }),
-        "utf8",
       );
     }
   } catch (err) {

@@ -1,5 +1,6 @@
 package expo.modules.zeropastesource
 
+import android.app.ActivityOptions
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -123,7 +124,9 @@ class ClipboardWatchService : Service() {
       putExtra(ClipCaptureActivity.EXTRA_PACKAGE, source?.get("packageName"))
     }
     try {
-      startActivity(intent)
+      // Suppress the enter animation too — NO_ANIMATION alone still flashes on some OEM skins.
+      val noAnim = ActivityOptions.makeCustomAnimation(this, 0, 0).toBundle()
+      startActivity(intent, noAnim)
     } catch (err: Exception) {
       Log.w(TAG, "failed to launch capture activity", err)
     }

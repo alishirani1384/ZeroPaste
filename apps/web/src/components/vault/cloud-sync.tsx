@@ -18,6 +18,7 @@ import {
   tryPushEncryptedClip,
   tryPushEncryptedPinboard,
   tryRegisterDevice,
+  trySoftDeletePinboard,
   trySubscribeEncryptedClips,
 } from "@/lib/sync-session";
 
@@ -40,15 +41,24 @@ export function CloudSync() {
   const deletedPushRef = useRef<Set<string>>(new Set());
   const bodyHashRef = useRef<Map<string, string>>(new Map());
   const pinboardSeenRef = useRef<Set<string>>(new Set());
+  const pinboardDeletedPushRef = useRef<Set<string>>(new Set());
   const pulledRef = useRef(false);
   const signedOutWarned = useRef(false);
   const skipToastOnce = useRef(false);
   const pullInFlight = useRef(false);
   const vaultKeyRef = useRef(vaultKey);
   const userIdRef = useRef(userId);
+  const prevUserIdRef = useRef<string | null>(null);
 
   vaultKeyRef.current = vaultKey;
   userIdRef.current = userId;
+
+  // Sign-out clears this account's "already pulled" mark so the next sign-in re-pulls.
+  useEffect(() => {
+    const prev = prevUserIdRef.current;
+    if (prev && !userId) pulledUsers.delete(prev);
+    prevUserIdRef.current = userId;
+  }, [userId]);
 
   // Shelf-ready: unlocked and past the recovery-key screen
   const shelfReady = unlocked && !recoveryKeyOnce && !!vaultKey;
@@ -76,10 +86,13 @@ export function CloudSync() {
         const beforeIds = new Set(seenRef.current);
         const beforeHashes = new Map(bodyHashRef.current);
 
-        const [remote, remoteBoards] = await Promise.all([
+        const [clipsResult, boardsResult] = await Promise.all([
           tryPullEncryptedClips(key),
           tryPullEncryptedPinboards(key),
         ]);
+        const remote = clipsResult.items;
+        const remoteBoards = boardsResult.boards;
+        const failedCount = clipsResult.failedCount + boardsResult.failedCount;
 
         pulledRef.current = true;
         pulledUsers.add(uid);
@@ -97,12 +110,23 @@ export function CloudSync() {
           await mergePinboardsFromCloud(remoteBoards);
         }
 
+        if (failedCount > 0) {
+          toast.error(
+            `Could not decrypt ${failedCount} item${failedCount === 1 ? "" : "s"} from the cloud`,
+            { duration: 5000 },
+          );
+        }
+
         // Upload any local custom boards that are not yet in the cloud.
         const local = await fetchBridgeState();
         for (const board of local?.pinboards ?? []) {
           if (board.id === "history" || pinboardSeenRef.current.has(board.id)) continue;
           pinboardSeenRef.current.add(board.id);
-          void tryPushEncryptedPinboard(board, key);
+          if (board.deletedAt) {
+            void trySoftDeletePinboard(board, key);
+          } else {
+            void tryPushEncryptedPinboard(board, key);
+          }
         }
 
         const live = remote.filter((c) => !c.deletedAt);
@@ -157,8 +181,8 @@ export function CloudSync() {
         }
       } catch (err) {
         console.warn("[ZeroPaste] pull failed", err);
+        // Don't mark this account as "pulled" on failure — retry on the next mount/unlock.
         pulledRef.current = true;
-        if (uid) pulledUsers.add(uid);
         setPhase("error", "Cloud pull failed");
         toast.error(
           opts.reason === "manual"
@@ -236,6 +260,7 @@ export function CloudSync() {
       bodyHashRef.current.clear();
       deletedPushRef.current.clear();
       pinboardSeenRef.current.clear();
+      pinboardDeletedPushRef.current.clear();
       skipToastOnce.current = false;
       return;
     }
@@ -246,6 +271,18 @@ export function CloudSync() {
 
       for (const board of state.pinboards) {
         if (board.id === "history") continue;
+        if (board.deletedAt) {
+          if (pinboardDeletedPushRef.current.has(board.id)) continue;
+          pinboardDeletedPushRef.current.add(board.id);
+          void trySoftDeletePinboard(board, key).then((result) => {
+            if (result === "pushed") {
+              console.info("[ZeroPaste] synced pinboard delete", board.name);
+            } else if (result === "error") {
+              pinboardDeletedPushRef.current.delete(board.id);
+            }
+          });
+          continue;
+        }
         if (pinboardSeenRef.current.has(board.id)) continue;
         pinboardSeenRef.current.add(board.id);
         void tryPushEncryptedPinboard(board, key).then((result) => {

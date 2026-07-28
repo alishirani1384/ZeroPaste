@@ -8,6 +8,7 @@ import {
   pushPinboard,
   registerDevice,
   softDeleteRemoteClip,
+  softDeleteRemotePinboard,
   subscribeClips,
   type ClipRow,
 } from "@paste/sync";
@@ -56,7 +57,7 @@ async function materializeForPush(clip: ClipItem): Promise<ClipItem | null> {
   if (clip.byteSize > MAX_CLOUD_IMAGE_BYTES) return null;
 
   const src = clip.preview || clip.body;
-  if (!src.startsWith("http://127.0.0.1:47821/clip-media/")) {
+  if (!/\/clip-media\//.test(src)) {
     // Already a data URL / remote URL under size cap
     if (src.startsWith("data:") && clip.byteSize > MAX_CLOUD_IMAGE_BYTES) return null;
     return clip;
@@ -136,18 +137,20 @@ export async function tryPushEncryptedClip(
   }
 }
 
-export async function tryPullEncryptedPinboards(vaultKey: Uint8Array): Promise<Pinboard[]> {
+export async function tryPullEncryptedPinboards(
+  vaultKey: Uint8Array,
+): Promise<{ boards: Pinboard[]; failedCount: number }> {
   const client = getSupabaseBrowser();
-  if (!client) return [];
+  if (!client) return { boards: [], failedCount: 0 };
   const {
     data: { session },
   } = await client.auth.getSession();
-  if (!session) return [];
+  if (!session) return { boards: [], failedCount: 0 };
   try {
     return await pullPinboards(client, session.user.id, vaultKey);
   } catch (err) {
     console.warn("[sync] pullPinboards failed", err);
-    return [];
+    return { boards: [], failedCount: 0 };
   }
 }
 
@@ -171,13 +174,45 @@ export async function tryPushEncryptedPinboard(
   }
 }
 
-export async function tryPullEncryptedClips(vaultKey: Uint8Array): Promise<ClipItem[]> {
+/** Soft-delete a pinboard remotely, mirroring the clip delete flow. */
+export async function trySoftDeletePinboard(
+  board: Pinboard,
+  vaultKey: Uint8Array,
+): Promise<"pushed" | "skipped" | "error"> {
+  if (board.id === "history") return "skipped";
   const client = getSupabaseBrowser();
-  if (!client) return [];
+  if (!client) return "skipped";
   const {
     data: { session },
   } = await client.auth.getSession();
-  if (!session) return [];
+  if (!session) return "skipped";
+  const deletedAt = board.deletedAt ?? new Date().toISOString();
+  try {
+    const updated = await softDeleteRemotePinboard(
+      client,
+      session.user.id,
+      board.id,
+      deletedAt,
+      deletedAt,
+    );
+    if (updated) return "pushed";
+    await pushPinboard(client, session.user.id, { ...board, deletedAt }, vaultKey);
+    return "pushed";
+  } catch (err) {
+    console.warn("[sync] pinboard delete push failed", err);
+    return "error";
+  }
+}
+
+export async function tryPullEncryptedClips(
+  vaultKey: Uint8Array,
+): Promise<{ items: ClipItem[]; failedCount: number }> {
+  const client = getSupabaseBrowser();
+  if (!client) return { items: [], failedCount: 0 };
+  const {
+    data: { session },
+  } = await client.auth.getSession();
+  if (!session) return { items: [], failedCount: 0 };
   try {
     return await pullClips(client, session.user.id, vaultKey);
   } catch (err) {
@@ -194,50 +229,86 @@ export function trySubscribeEncryptedClips(
   const client = getSupabaseBrowser();
   if (!client) return null;
 
+  let cancelled = false;
   let unsub: (() => void) | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let attempt = 0;
 
-  void client.auth.getSession().then(({ data: { session } }) => {
-    if (!session) return;
-    const channel = subscribeClips(client, session.user.id, (row: ClipRow) => {
-      try {
-        if (row.deleted_at) {
-          onClip({
-            id: row.id,
-            kind: (row.kind as ClipItem["kind"]) || "other",
-            title: "Deleted",
-            preview: "",
-            body: "",
-            mimeType: "text/plain",
-            byteSize: 0,
-            contentHash: row.id,
-            source: {
-              appName: "Cloud",
-              deviceName: "Sync",
-              devicePlatform: "web",
-            },
-            createdAt: row.created_at,
-            updatedAt: row.updated_at,
-            pinnedBoardIds: [],
-            deletedAt: row.deleted_at,
-          });
-          return;
-        }
-        onClip(
-          decryptClip(vaultKey, {
-            version: 1,
-            ciphertext: row.ciphertext,
-            nonce: row.nonce,
-            wrappedKey: row.wrapped_key,
-          }),
-        );
-      } catch (err) {
-        console.warn("[sync] realtime decrypt failed", err);
+  const connect = () => {
+    if (cancelled) return;
+    void client.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled || !session) return;
+
+      const channel = subscribeClips(
+        client,
+        session.user.id,
+        (row: ClipRow) => {
+          try {
+            if (row.deleted_at) {
+              onClip({
+                id: row.id,
+                kind: (row.kind as ClipItem["kind"]) || "other",
+                title: "Deleted",
+                preview: "",
+                body: "",
+                mimeType: "text/plain",
+                byteSize: 0,
+                contentHash: row.id,
+                source: {
+                  appName: "Cloud",
+                  deviceName: "Sync",
+                  devicePlatform: "web",
+                },
+                createdAt: row.created_at,
+                updatedAt: row.updated_at,
+                pinnedBoardIds: [],
+                deletedAt: row.deleted_at,
+              });
+              return;
+            }
+            onClip(
+              decryptClip(vaultKey, {
+                version: 1,
+                ciphertext: row.ciphertext,
+                nonce: row.nonce,
+                wrappedKey: row.wrapped_key,
+              }),
+            );
+          } catch (err) {
+            console.warn("[sync] realtime decrypt failed", err);
+          }
+        },
+        (status) => {
+          if (status === "SUBSCRIBED") {
+            attempt = 0;
+            return;
+          }
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            if (cancelled) return;
+            unsub = null;
+            void client.removeChannel(channel);
+            const delay = Math.min(1000 * 2 ** attempt, 30000);
+            attempt++;
+            reconnectTimer = setTimeout(connect, delay);
+          }
+        },
+      );
+
+      if (cancelled) {
+        void client.removeChannel(channel);
+        return;
       }
+      unsub = () => {
+        void client.removeChannel(channel);
+      };
     });
-    unsub = () => {
-      void client.removeChannel(channel);
-    };
-  });
+  };
 
-  return () => unsub?.();
+  connect();
+
+  return () => {
+    cancelled = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    unsub?.();
+  };
 }

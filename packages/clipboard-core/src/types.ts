@@ -36,6 +36,7 @@ export type Pinboard = {
   color: string;
   createdAt: string;
   sortOrder: number;
+  deletedAt?: string | null;
 };
 
 export type ClipFilter = {

@@ -37,7 +37,7 @@ export async function pushPinboard(
     sort_order: board.sortOrder,
     created_at: board.createdAt || now,
     updated_at: now,
-    deleted_at: null,
+    deleted_at: board.deletedAt ?? null,
   });
   if (error) throw error;
 }
@@ -46,17 +46,28 @@ export async function pullPinboards(
   client: SupabaseClient,
   userId: string,
   vaultKey: Uint8Array,
-): Promise<Pinboard[]> {
+): Promise<{ boards: Pinboard[]; failedCount: number }> {
   const { data, error } = await client
     .from("pinboards")
     .select("*")
     .eq("user_id", userId)
-    .is("deleted_at", null)
     .order("sort_order", { ascending: true });
   if (error) throw error;
 
   const boards: Pinboard[] = [];
+  let failedCount = 0;
   for (const row of (data ?? []) as PinboardRow[]) {
+    if (row.deleted_at) {
+      boards.push({
+        id: row.id,
+        name: "",
+        color: "",
+        createdAt: row.created_at,
+        sortOrder: row.sort_order,
+        deletedAt: row.deleted_at,
+      });
+      continue;
+    }
     try {
       const board = decryptJson<Pinboard>(vaultKey, {
         version: 1,
@@ -66,8 +77,30 @@ export async function pullPinboards(
       });
       if (isSyncablePinboard(board)) boards.push(board);
     } catch (err) {
+      failedCount++;
       console.warn("[sync] failed to decrypt pinboard", row.id, err);
     }
   }
-  return boards;
+  return { boards, failedCount };
+}
+
+/**
+ * Soft-delete a pinboard that already exists remotely. Returns true if a row was updated.
+ * Mirrors softDeleteRemoteClip so board tombstones don't require re-encrypting.
+ */
+export async function softDeleteRemotePinboard(
+  client: SupabaseClient,
+  userId: string,
+  boardId: string,
+  deletedAt: string,
+  updatedAt: string,
+): Promise<boolean> {
+  const { data, error } = await client
+    .from("pinboards")
+    .update({ deleted_at: deletedAt, updated_at: updatedAt })
+    .eq("id", boardId)
+    .eq("user_id", userId)
+    .select("id");
+  if (error) throw error;
+  return (data?.length ?? 0) > 0;
 }

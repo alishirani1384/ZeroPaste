@@ -37,6 +37,7 @@ export default function AccountScreen() {
   const [watchOn, setWatchOn] = useState(false);
   const [watchRunning, setWatchRunning] = useState(false);
   const [watchBusy, setWatchBusy] = useState(false);
+  const [batteryOk, setBatteryOk] = useState(true);
 
   const refreshWatch = useCallback(() => {
     if (Platform.OS === "android" && sourceAvailable) {
@@ -45,6 +46,7 @@ export default function AccountScreen() {
     if (Platform.OS === "android" && watchAvailable) {
       setWatchOn(isClipboardWatchEnabled());
       setWatchRunning(isClipboardWatchRunning());
+      setBatteryOk(isIgnoringBatteryOptimizations());
     }
   }, [sourceAvailable, watchAvailable]);
 
@@ -71,6 +73,22 @@ export default function AccountScreen() {
     } finally {
       setWatchBusy(false);
     }
+  };
+
+  const restartWatch = async () => {
+    if (!watchAvailable || watchBusy || !vault.unlocked) return;
+    setWatchBusy(true);
+    try {
+      await startClipboardWatch();
+      refreshWatch();
+    } finally {
+      setWatchBusy(false);
+    }
+  };
+
+  const onBatteryPress = () => {
+    if (batteryOk) return;
+    requestIgnoreBatteryOptimizations();
   };
 
   const statusLabel = auth.session
@@ -116,13 +134,28 @@ export default function AccountScreen() {
         {Platform.OS === "android" ? (
           <SettingsSection
             title="Clipboard"
-            footer="Background watch uses a quiet notification so ZeroPaste can capture copies after you leave the app. Allow unrestricted battery if your phone asks — Xiaomi and similar OEMs otherwise kill the watch when you swipe ZeroPaste away. Usage Access helps label the source app."
+            footer="Background watch uses a quiet notification so ZeroPaste can capture copies after you leave the app. Allow unrestricted battery if your phone asks — Xiaomi, OnePlus, Oppo and similar OEMs otherwise kill the watch (and its notification) a few minutes after you swipe ZeroPaste away. Usage Access helps label the source app."
           >
             <SettingsRow
               label="Background watch"
-              switchValue={watchOn && watchRunning}
+              switchValue={watchOn}
               onSwitch={(v) => void toggleWatch(v)}
               disabled={!watchAvailable || watchBusy || !vault.unlocked}
+              last={!(watchOn && !watchRunning)}
+            />
+            {watchOn && !watchRunning ? (
+              <SettingsRow
+                label="Not running — tap to restart"
+                destructive
+                onPress={() => void restartWatch()}
+                disabled={watchBusy || !vault.unlocked}
+              />
+            ) : null}
+            <SettingsRow
+              label="Unrestricted battery"
+              value={batteryOk ? "Allowed" : "Restricted"}
+              onPress={!batteryOk ? onBatteryPress : undefined}
+              showChevron={!batteryOk}
             />
             <SettingsRow
               label="Source apps"

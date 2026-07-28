@@ -19,7 +19,9 @@ export {
   toB64,
   fromB64,
   ARGON2_OPTS,
+  LEGACY_ARGON2_OPTS,
   type Argon2idDeriveFn,
+  type Argon2Opts,
   type EncryptedEnvelope,
   type WrappedKey,
 } from "./vault";

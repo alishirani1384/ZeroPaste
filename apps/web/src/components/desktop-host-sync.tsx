@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 
-const BRIDGE = "http://127.0.0.1:47821";
+import { bridgeFetch } from "@/lib/bridge-client";
 
 /** Proves the Electrobun host bridge is the new build; surfaces errors in the UI. */
 export function DesktopHostSync() {
@@ -11,7 +11,7 @@ export function DesktopHostSync() {
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(`${BRIDGE}/health`, { cache: "no-store" });
+        const res = await bridgeFetch("/health");
         const data = (await res.json()) as { hostBuild?: string; ok?: boolean };
         if (cancelled) return;
         if (!data.hostBuild?.includes("zeropaste-host")) {

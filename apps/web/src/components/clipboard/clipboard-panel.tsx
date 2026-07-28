@@ -18,6 +18,7 @@ import {
   setDesktopWindowMode,
   subscribeBridge,
   suppressCapture,
+  unpinClipFromBoard,
   updateClipBody,
   updatePinboard,
   type BridgeState,
@@ -78,6 +79,11 @@ export function ClipboardPanel() {
       toast.error(w, { duration: 8000 });
     }
   }, [state.hostWarnings]);
+
+  const visiblePinboards = useMemo(
+    () => state.pinboards.filter((b) => !b.deletedAt),
+    [state.pinboards],
+  );
 
   const baseClips = useMemo(() => {
     return searchClips(state.clips, {
@@ -249,6 +255,13 @@ export function ClipboardPanel() {
         await pinClipToBoard(clip.id, action.pin);
         const board = state.pinboards.find((b) => b.id === action.pin);
         toast.success(board ? `Pinned to ${board.name}` : "Pinned");
+        return;
+      }
+      if (typeof action === "object" && "unpin" in action) {
+        if (!clip.pinnedBoardIds.includes(action.unpin)) return;
+        await unpinClipFromBoard(clip.id, action.unpin);
+        const board = state.pinboards.find((b) => b.id === action.unpin);
+        toast.message(board ? `Unpinned from ${board.name}` : "Unpinned");
       }
     },
     [activate, copyClip, menu?.x, menu?.y, openQuickLook, state.pinboards],
@@ -280,12 +293,12 @@ export function ClipboardPanel() {
 
   const menuClip = menu ? (state.clips.find((c) => c.id === menu.clipId) ?? null) : null;
   const menuBoard = boardMenu
-    ? (state.pinboards.find((b) => b.id === boardMenu.boardId) ?? null)
+    ? (visiblePinboards.find((b) => b.id === boardMenu.boardId) ?? null)
     : null;
   const composerPinClip = pinComposer?.pinClipId
     ? (state.clips.find((c) => c.id === pinComposer.pinClipId) ?? null)
     : null;
-  const activeBoardMeta = state.pinboards.find((b) => b.id === activeBoard);
+  const activeBoardMeta = visiblePinboards.find((b) => b.id === activeBoard);
   const viewingCustomBoard = activeBoard !== "history";
   const isCompact = compact || state.compact;
 
@@ -444,7 +457,7 @@ export function ClipboardPanel() {
     >
       <div className="zp-resize-hint" aria-hidden />
       <PanelToolbar
-        boards={state.pinboards}
+        boards={visiblePinboards}
         activeBoard={activeBoard}
         query={query}
         onBoardChange={setActiveBoard}
@@ -550,7 +563,7 @@ export function ClipboardPanel() {
           x={menu.x}
           y={menu.y}
           clip={menuClip}
-          boards={state.pinboards}
+          boards={visiblePinboards}
           onClose={() => setMenu(null)}
           onAction={(action) => void onMenuAction(menuClip, action)}
         />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { upsertVaultMetaBlob } from "@paste/sync";
+import { upsertVaultMetaBlob, fetchVaultMetaBlob } from "@paste/sync";
 
 import { PasswordField } from "@/components/password-field";
 import { useVault } from "@/components/vault/vault-context";
@@ -76,7 +76,14 @@ export function AuthPanel() {
             data: { session },
           } = await auth.client.auth.getSession();
           if (session) {
-            await upsertVaultMetaBlob(auth.client, session.user.id, vault.meta);
+            const remoteMeta = await fetchVaultMetaBlob(auth.client, session.user.id);
+            if (!remoteMeta) {
+              await upsertVaultMetaBlob(auth.client, session.user.id, vault.meta);
+            } else if (remoteMeta.saltB64 !== vault.meta.saltB64) {
+              vault.adoptMeta(remoteMeta);
+              setMessage("Found an existing cloud vault — unlock with that vault's passphrase.");
+              return;
+            }
           }
         }
         setMessage("Signed in — encrypted sync enabled.");

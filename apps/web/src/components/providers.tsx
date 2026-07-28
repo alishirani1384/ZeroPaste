@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Toaster } from "@paste/ui/components/sonner";
 
 import { AuthProvider } from "@/lib/auth-session";
@@ -16,14 +16,24 @@ import { ThemeProvider } from "./theme-provider";
 
 function HostSessionGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
+  const [remountKey, setRemountKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    void hydrateWebSessionFromHost().finally(() => {
-      if (!cancelled) setReady(true);
-    });
+    let timedOut = false;
+    void hydrateWebSessionFromHost()
+      .then((applied) => {
+        if (cancelled || !timedOut || !applied) return;
+        // The timeout already let Auth/Vault mount before hydrate finished — remount
+        // them now so they re-read the keys hydrate just restored to localStorage.
+        setRemountKey((k) => k + 1);
+      })
+      .finally(() => {
+        if (!cancelled) setReady(true);
+      });
     // Don't block forever if the bridge is slow — shelf still works offline.
     const t = window.setTimeout(() => {
+      timedOut = true;
       if (!cancelled) setReady(true);
     }, 2500);
     return () => {
@@ -40,7 +50,7 @@ function HostSessionGate({ children }: { children: ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return <Fragment key={remountKey}>{children}</Fragment>;
 }
 
 export default function Providers({ children }: { children: React.ReactNode }) {
