@@ -1,29 +1,5 @@
-import type { Metadata } from "next";
+import { LegacyRedirect } from "@/components/landing/legacy-redirect";
 
-import {
-  DownloadFaqSection,
-  DownloadHeroSection,
-  DownloadTrialSection,
-  SiteFooter,
-  SiteHeader,
-} from "@/components/landing";
-
-export const metadata: Metadata = {
-  title: "Download ZeroPaste — Try for free",
-  description:
-    "Everything you copy is saved, searchable, and in sync. Try ZeroPaste free for seven days on all your devices.",
-};
-
-export default function DownloadPage() {
-  return (
-    <>
-      <SiteHeader />
-      <main>
-        <DownloadHeroSection />
-        <DownloadTrialSection />
-        <DownloadFaqSection />
-      </main>
-      <SiteFooter />
-    </>
-  );
+export default function LegacyDownloadRedirect() {
+  return <LegacyRedirect to="/download" />;
 }

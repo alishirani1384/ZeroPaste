@@ -8,9 +8,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.3/ZeroPaste-desktop-v1.0.3-Setup.zip"><img src="https://img.shields.io/badge/Windows-Download-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows" /></a>
+  <a href="https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.4/ZeroPaste-desktop-v1.0.4-Setup.zip"><img src="https://img.shields.io/badge/Windows-Download-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows" /></a>
   &nbsp;
-  <a href="https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.3/ZeroPaste-desktop-v1.0.3-linux-x64-Setup.tar.gz"><img src="https://img.shields.io/badge/Linux-Download-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download Linux" /></a>
+  <a href="https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.4/ZeroPaste-desktop-v1.0.4-linux-x64-Setup.tar.gz"><img src="https://img.shields.io/badge/Linux-Download-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download Linux" /></a>
   &nbsp;
   <a href="https://github.com/alishirani1384/ZeroPaste/releases/download/android-v2.0.0/ZeroPaste-android-v2.0.0.apk"><img src="https://img.shields.io/badge/Android-APK-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download Android" /></a>
 </p>
@@ -62,8 +62,8 @@ If someone steals the database, intercepts the network, or works at the sync pro
 
 | Platform | Package | Link |
 |----------|---------|------|
-| **Windows** 10/11 | Installer zip → run **`Install ZeroPaste.exe`** | [ZeroPaste-desktop-v1.0.3-Setup.zip](https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.3/ZeroPaste-desktop-v1.0.3-Setup.zip) |
-| **Linux** x64 (Ubuntu 22.04+) | Installer archive → run **`./installer`** | [ZeroPaste-desktop-v1.0.3-linux-x64-Setup.tar.gz](https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.3/ZeroPaste-desktop-v1.0.3-linux-x64-Setup.tar.gz) |
+| **Windows** 10/11 | Installer zip → run **`Install ZeroPaste.exe`** | [ZeroPaste-desktop-v1.0.4-Setup.zip](https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.4/ZeroPaste-desktop-v1.0.4-Setup.zip) |
+| **Linux** x64 (Ubuntu 22.04+) | Installer archive → run **`./installer`** | [ZeroPaste-desktop-v1.0.4-linux-x64-Setup.tar.gz](https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.4/ZeroPaste-desktop-v1.0.4-linux-x64-Setup.tar.gz) |
 | **Android** | Sideload APK | [ZeroPaste-android-v2.0.0.apk](https://github.com/alishirani1384/ZeroPaste/releases/download/android-v2.0.0/ZeroPaste-android-v2.0.0.apk) |
 
 All builds: **[github.com/alishirani1384/ZeroPaste/releases](https://github.com/alishirani1384/ZeroPaste/releases)**
@@ -79,7 +79,7 @@ Unzip the release and double-click **`Install ZeroPaste.exe`** (not Setup alone)
 <summary><strong>Linux install tip</strong></summary>
 
 ```bash
-tar -xzf ZeroPaste-desktop-v1.0.3-linux-x64-Setup.tar.gz
+tar -xzf ZeroPaste-desktop-v1.0.4-linux-x64-Setup.tar.gz
 ./installer
 ```
 
@@ -201,8 +201,8 @@ Full write-up: **[SECURITY.md](./SECURITY.md)**.
 
 ```bash
 bun install
-bun run dev:web        # UI → http://localhost:3001
-bun run dev:desktop    # Electrobun + HMR (bridge on :47821)
+bun run dev:web        # Landing → http://localhost:3001 · shelf → /app
+bun run dev:desktop    # Electrobun loads /app + HMR (bridge on :47821)
 bun run dev:native     # Expo Metro
 bun run prebuild:native && bun run android:native
 ```

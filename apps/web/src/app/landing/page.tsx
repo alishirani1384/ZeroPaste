@@ -1,25 +1,5 @@
-import {
-  AudiencesSection,
-  DonationSection,
-  DonorsSection,
-  FeaturesSection,
-  HeroSection,
-  SiteFooter,
-  SiteHeader,
-} from "@/components/landing";
+import { LegacyRedirect } from "@/components/landing/legacy-redirect";
 
-export default function LandingPage() {
-  return (
-    <>
-      <SiteHeader />
-      <main>
-        <HeroSection />
-        <FeaturesSection />
-        <AudiencesSection />
-        <DonorsSection />
-        <DonationSection />
-      </main>
-      <SiteFooter />
-    </>
-  );
+export default function LegacyLandingRedirect() {
+  return <LegacyRedirect to="/" />;
 }

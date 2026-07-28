@@ -1,6 +1,6 @@
 export const LANDING_NAV = {
-  logo: { href: "/landing", label: "ZeroPaste" },
-  cta: { href: "/landing/download", label: "Try for free" },
+  logo: { href: "/", label: "ZeroPaste" },
+  cta: { href: "/download", label: "Try for free" },
 } as const;
 
 /** Update these when release / store listings go live. */

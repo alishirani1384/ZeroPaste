@@ -99,7 +99,7 @@ export function DonationSection() {
                 Message on X
               </a>
               <CtaButton
-                href="/landing/download"
+                href="/download"
                 className="!mt-0 h-12 w-full !bg-transparent !px-6 !text-[1.125rem] !tracking-[0.1px] !text-[#101010] shadow-[inset_0_0_0_2px_#d2d2d7] hover:!bg-[#f5f5f7] hover:brightness-100"
               >
                 Or download free

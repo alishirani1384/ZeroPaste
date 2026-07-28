@@ -61,7 +61,12 @@ function HostSessionGate({ children }: { children: ReactNode }) {
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isLanding = pathname?.startsWith("/landing") ?? false;
+  // Marketing site is light; desktop shelf (/app) + account stay dark.
+  const isLanding =
+    !pathname ||
+    pathname === "/" ||
+    pathname.startsWith("/download") ||
+    pathname.startsWith("/landing");
 
   return (
     <ThemeProvider

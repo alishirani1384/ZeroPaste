@@ -51,7 +51,10 @@ if (process.platform === "linux") {
 }
 
 const DEV_SERVER_PORT = 3001;
-const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
+/** Shelf UI lives at `/app` — `/` is the public landing page. */
+const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}/app`;
+/** Next `output: "export"` emits `out/app.html` (not `app/index.html`). */
+const PACKAGED_VIEW_URL = "views://mainview/app.html";
 
 /** Next often starts after Electrobun when using concurrently — wait before falling back. */
 async function waitForDevServer(attempts = 60, delayMs = 500): Promise<boolean> {
@@ -83,7 +86,7 @@ async function getMainViewUrl(): Promise<string> {
       "[ZeroPaste] web HMR never came up — using packaged views (stale UI). Run: bun run dev:web",
     );
   }
-  return "views://mainview/index.html";
+  return PACKAGED_VIEW_URL;
 }
 
 await startBridgeServer();
@@ -94,7 +97,7 @@ const boot = getBridgeBootInfo();
 const url = await getMainViewUrl();
 /**
  * Never append query params to views:// — Electrobun/WebView2 treats
- * `views://mainview/index.html?…` as a missing file and the shelf stays blank.
+ * `views://mainview/app.html?…` as a missing file and the shelf stays blank.
  * Dev HMR (http://localhost) can take query injection; packaged UI uses /bridge-boot.
  */
 const urlWithAuth = url.startsWith("views://")
