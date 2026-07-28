@@ -64,7 +64,7 @@ If someone steals the database, intercepts the network, or works at the sync pro
 |----------|---------|------|
 | **Windows** 10/11 | Installer zip → run **`Install ZeroPaste.exe`** | [ZeroPaste-desktop-v1.0.3-Setup.zip](https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.3/ZeroPaste-desktop-v1.0.3-Setup.zip) |
 | **Linux** x64 (Ubuntu 22.04+) | Installer archive → run **`./installer`** | [ZeroPaste-desktop-v1.0.3-linux-x64-Setup.tar.gz](https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.3/ZeroPaste-desktop-v1.0.3-linux-x64-Setup.tar.gz) |
-| **Android** | Sideload APK | [ZeroPaste-android-v1.0.9.apk](https://github.com/alishirani1384/ZeroPaste/releases/download/android-v2.0.0/ZeroPaste-android-v2.0.0.apk) |
+| **Android** | Sideload APK | [ZeroPaste-android-v2.0.0.apk](https://github.com/alishirani1384/ZeroPaste/releases/download/android-v2.0.0/ZeroPaste-android-v2.0.0.apk) |
 
 All builds: **[github.com/alishirani1384/ZeroPaste/releases](https://github.com/alishirani1384/ZeroPaste/releases)**
 
