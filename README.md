@@ -12,7 +12,7 @@
   &nbsp;
   <a href="https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.3/ZeroPaste-desktop-v1.0.3-linux-x64-Setup.tar.gz"><img src="https://img.shields.io/badge/Linux-Download-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download Linux" /></a>
   &nbsp;
-  <a href="https://github.com/alishirani1384/ZeroPaste/releases/download/android-v1.0.9/ZeroPaste-android-v1.0.9.apk"><img src="https://img.shields.io/badge/Android-APK-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download Android" /></a>
+  <a href="https://github.com/alishirani1384/ZeroPaste/releases/download/android-v2.0.0/ZeroPaste-android-v2.0.0.apk"><img src="https://img.shields.io/badge/Android-APK-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download Android" /></a>
 </p>
 
 <p align="center">
