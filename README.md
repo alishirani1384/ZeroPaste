@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="https://github.com/alishirani1384/ZeroPaste/releases"><img src="https://img.shields.io/github/v/release/alishirani1384/ZeroPaste?include_prereleases&sort=semver&label=latest%20release&style=flat-square" alt="Latest release" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-check%20repo-blue?style=flat-square" alt="License" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License" /></a>
   <a href="SECURITY.md"><img src="https://img.shields.io/badge/security-E2E%20by%20default-0B7A3E?style=flat-square" alt="E2E security" /></a>
   <a href="https://github.com/alishirani1384/ZeroPaste"><img src="https://img.shields.io/github/stars/alishirani1384/ZeroPaste?style=flat-square" alt="Stars" /></a>
 </p>
