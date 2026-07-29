@@ -92,6 +92,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL ?? "",
     EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "",
     EXPO_PUBLIC_SERVER_URL: process.env.EXPO_PUBLIC_SERVER_URL ?? "",
+    EXPO_PUBLIC_SITE_URL: process.env.EXPO_PUBLIC_SITE_URL ?? "https://zeropaste.vercel.app",
   },
   owner: "alishiranis-team",
 });

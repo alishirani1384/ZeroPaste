@@ -19,7 +19,8 @@ function isMarketingPath(pathname: string | null) {
   return (
     pathname === "/" ||
     pathname.startsWith("/download") ||
-    pathname.startsWith("/landing")
+    pathname.startsWith("/landing") ||
+    pathname.startsWith("/auth")
   );
 }
 

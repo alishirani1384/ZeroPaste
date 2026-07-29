@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 
+import { getAuthEmailRedirectTo } from "@/lib/auth-redirect";
 import { ensureNativeSyncReady, getSupabaseNative, supabaseConfigured } from "@/lib/supabase";
 import { rnSyncStorage } from "@/lib/rn-storage";
 
@@ -96,7 +97,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string) => {
       const sb = client ?? getSupabaseNative();
       if (!sb) throw new Error("Supabase not configured");
-      const { error } = await sb.auth.signUp({ email, password });
+      const { error } = await sb.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: getAuthEmailRedirectTo() },
+      });
       if (error) throw error;
       return "Check your email to confirm, then sign in.";
     },

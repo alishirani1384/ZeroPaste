@@ -7,11 +7,11 @@ export const LANDING_NAV = {
 export const DOWNLOAD_LINKS = {
   githubReleases: "https://github.com/alishirani1384/ZeroPaste/releases",
   windows:
-    "https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.5/ZeroPaste-desktop-v1.0.5-Setup.zip",
+    "https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.6/ZeroPaste-desktop-v1.0.6-Setup.zip",
   linux:
-    "https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.5/ZeroPaste-desktop-v1.0.5-linux-x64-Setup.tar.gz",
+    "https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.6/ZeroPaste-desktop-v1.0.6-linux-x64-Setup.tar.gz",
   android:
-    "https://github.com/alishirani1384/ZeroPaste/releases/download/android-v2.0.2/ZeroPaste-android-v2.0.2.apk",
+    "https://github.com/alishirani1384/ZeroPaste/releases/download/android-v2.0.3/ZeroPaste-android-v2.0.3.apk",
   myket: "#",
   bazaar: "#",
 } as const;

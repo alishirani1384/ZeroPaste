@@ -11,6 +11,7 @@ import {
 } from "react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 
+import { getAuthEmailRedirectTo } from "@/lib/auth-redirect";
 import { getSupabaseBrowser, supabaseConfigured } from "@/lib/supabase";
 
 type AuthContextValue = {
@@ -100,7 +101,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = useCallback(
     async (email: string, password: string) => {
       if (!client) throw new Error("Supabase not configured");
-      const { error } = await client.auth.signUp({ email, password });
+      const { error } = await client.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: getAuthEmailRedirectTo() },
+      });
       if (error) throw error;
       return "Check your email to confirm, then sign in.";
     },
