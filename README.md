@@ -12,7 +12,7 @@
   &nbsp;
   <a href="https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.5/ZeroPaste-desktop-v1.0.5-linux-x64-Setup.tar.gz"><img src="https://img.shields.io/badge/Linux-Download-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download Linux" /></a>
   &nbsp;
-  <a href="https://github.com/alishirani1384/ZeroPaste/releases/download/android-v2.0.1/ZeroPaste-android-v2.0.1.apk"><img src="https://img.shields.io/badge/Android-APK-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download Android" /></a>
+  <a href="https://github.com/alishirani1384/ZeroPaste/releases/download/android-v2.0.2/ZeroPaste-android-v2.0.2.apk"><img src="https://img.shields.io/badge/Android-APK-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download Android" /></a>
 </p>
 
 <p align="center">
@@ -64,7 +64,7 @@ If someone steals the database, intercepts the network, or works at the sync pro
 |----------|---------|------|
 | **Windows** 10/11 | Installer zip → run **`Install ZeroPaste.exe`** | [ZeroPaste-desktop-v1.0.5-Setup.zip](https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.5/ZeroPaste-desktop-v1.0.5-Setup.zip) |
 | **Linux** x64 (Ubuntu 22.04+) | Installer archive → run **`./installer`** | [ZeroPaste-desktop-v1.0.5-linux-x64-Setup.tar.gz](https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.5/ZeroPaste-desktop-v1.0.5-linux-x64-Setup.tar.gz) |
-| **Android** | Sideload APK | [ZeroPaste-android-v2.0.1.apk](https://github.com/alishirani1384/ZeroPaste/releases/download/android-v2.0.1/ZeroPaste-android-v2.0.1.apk) |
+| **Android** | Sideload APK | [ZeroPaste-android-v2.0.2.apk](https://github.com/alishirani1384/ZeroPaste/releases/download/android-v2.0.2/ZeroPaste-android-v2.0.2.apk) |
 
 All builds: **[github.com/alishirani1384/ZeroPaste/releases](https://github.com/alishirani1384/ZeroPaste/releases)**
 

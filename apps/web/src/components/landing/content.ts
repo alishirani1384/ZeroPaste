@@ -11,7 +11,7 @@ export const DOWNLOAD_LINKS = {
   linux:
     "https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.5/ZeroPaste-desktop-v1.0.5-linux-x64-Setup.tar.gz",
   android:
-    "https://github.com/alishirani1384/ZeroPaste/releases/download/android-v2.0.1/ZeroPaste-android-v2.0.1.apk",
+    "https://github.com/alishirani1384/ZeroPaste/releases/download/android-v2.0.2/ZeroPaste-android-v2.0.2.apk",
   myket: "#",
   bazaar: "#",
 } as const;

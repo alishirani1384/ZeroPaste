@@ -17,6 +17,10 @@
 # Required secrets:
 #   EXPO_PUBLIC_SUPABASE_URL
 #   EXPO_PUBLIC_SUPABASE_ANON_KEY
+#   ANDROID_KEYSTORE_BASE64   (base64 of zeropaste-release.keystore / PKCS12)
+#   ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASSWORD
 # Optional:
 #   EXPO_PUBLIC_SERVER_URL
 #   NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -220,11 +224,42 @@ jobs:
             console.log('version=' + cfg.version + ' versionCode=' + cfg.android?.versionCode);
           "
 
+      - name: Decode release keystore
+        working-directory: apps/native/android/app
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "::error::Missing ANDROID_KEYSTORE_BASE64 secret (publish keystore, base64-encoded)"
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > zeropaste-release.keystore
+          # PKCS12/JKS are ZIP-like; reject empty/corrupt decode early
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("zeropaste-release.keystore")
+          data = p.read_bytes()
+          if len(data) < 64:
+              raise SystemExit(f"keystore too small ({len(data)} bytes) — check ANDROID_KEYSTORE_BASE64")
+          print(f"keystore ok: {len(data)} bytes")
+          PY
+
+      - name: Configure release signing
+        working-directory: apps/native
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: bun run scripts/configure-android-release-signing.ts
+
       - name: Assemble release APK
         working-directory: apps/native/android
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace
@@ -242,6 +277,17 @@ jobs:
           cp "$APK" "$DEST"
           echo "path=$DEST" >> "$GITHUB_OUTPUT"
           ls -lh "$DEST"
+
+          # Fail if still signed with the Android debug cert
+          CERTS=$(keytool -printcert -jarfile "$DEST" 2>/dev/null || true)
+          echo "$CERTS"
+          if echo "$CERTS" | grep -qi "CN=Android Debug"; then
+            echo "::error::APK is still signed with the debug key — release signing did not apply"
+            exit 1
+          fi
+          if ! echo "$CERTS" | grep -qi "Owner:\|Signer #1\|Certificate fingerprints"; then
+            echo "::warning::Could not print APK signing cert (keytool); continuing"
+          fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

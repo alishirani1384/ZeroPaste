@@ -46,14 +46,62 @@ bun run android:native
 
 ### GitHub Actions release (recommended)
 
-Builds a sideload APK on Ubuntu and attaches it to a [GitHub Release](https://github.com/alishirani1384/ZeroPaste/releases).
+Builds a **publish-key–signed** sideload APK on Ubuntu and attaches it to a [GitHub Release](https://github.com/alishirani1384/ZeroPaste/releases).
 
-1. Add Actions secrets: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` (optional: `EXPO_PUBLIC_SERVER_URL`)
-2. Trigger either:
-   - `git tag v1.0.0 && git push origin v1.0.0`
-   - or **Actions → Android Release → Run workflow**
+Workflow: `.github/workflows/release.yml` (Android job).
 
-Workflow: `.github/workflows/android-release.yml`
+#### One-time: create a release keystore
+
+Do this once on a secure machine. **Back up the `.keystore` file and passwords offline** — losing them means you cannot update the same package name with a new signature (users must uninstall first).
+
+```bash
+keytool -genkeypair -v -storetype PKCS12 \
+  -keystore zeropaste-release.keystore \
+  -alias zeropaste \
+  -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Encode for GitHub (PowerShell):
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("zeropaste-release.keystore")) | Set-Clipboard
+```
+
+Or (macOS/Linux):
+
+```bash
+base64 -w0 zeropaste-release.keystore | pbcopy   # or xclip / just print
+```
+
+#### Required Actions secrets
+
+| Secret | Purpose |
+|--------|---------|
+| `EXPO_PUBLIC_SUPABASE_URL` | Baked into the APK |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Baked into the APK |
+| `ANDROID_KEYSTORE_BASE64` | Base64 of `zeropaste-release.keystore` |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
+| `ANDROID_KEY_ALIAS` | e.g. `zeropaste` |
+| `ANDROID_KEY_PASSWORD` | Key password (often same as store) |
+
+Optional: `EXPO_PUBLIC_SERVER_URL`
+
+Ship by bumping `apps/native/package.json` version and pushing to `main` (or **Actions → Release → Run workflow** with force Android).
+
+**Note:** Builds signed with the old debug key cannot update in place over a publish-key APK (and vice versa). Uninstall the debug build first.
+
+### Local release signing
+
+After `bun run prebuild:android`:
+
+```bash
+# place keystore at apps/native/android/app/zeropaste-release.keystore
+export ANDROID_KEYSTORE_PASSWORD=...
+export ANDROID_KEY_ALIAS=zeropaste
+export ANDROID_KEY_PASSWORD=...
+bun run configure:android-signing
+bun run build:android
+```
 
 ### EAS (optional)
 
