@@ -124,6 +124,8 @@ function ImageBody({ clip }: { clip: ClipItem }) {
           alt=""
           className="zp-mcard-image-fill"
           draggable={false}
+          loading="lazy"
+          decoding="async"
           onError={() => setFailed(true)}
         />
       ) : (

@@ -53,7 +53,7 @@ export function PanelToolbar({
   const customBoards = boards.filter((b) => b.id !== "history");
 
   const cloudTitle = pulling
-    ? (detail ?? "Restoring from cloud…")
+    ? (detail ?? "Restoring in background…")
     : phase === "error"
       ? (detail ?? "Cloud sync error")
       : phase === "synced"

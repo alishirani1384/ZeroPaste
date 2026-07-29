@@ -16,7 +16,7 @@ export default function LandingPage() {
         <HeroSection />
         <FeaturesSection />
         <AudiencesSection />
-        <DonorsSection />
+        {/* <DonorsSection /> */}
         <DonationSection />
       </main>
       <SiteFooter />

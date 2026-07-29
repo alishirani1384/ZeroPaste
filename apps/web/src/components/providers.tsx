@@ -14,6 +14,15 @@ import { SyncStatusProvider } from "./vault/sync-status";
 import { VaultProvider } from "./vault/vault-context";
 import { ThemeProvider } from "./theme-provider";
 
+function isMarketingPath(pathname: string | null) {
+  if (!pathname) return true;
+  return (
+    pathname === "/" ||
+    pathname.startsWith("/download") ||
+    pathname.startsWith("/landing")
+  );
+}
+
 function HostSessionGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [remountKey, setRemountKey] = useState(0);
@@ -59,14 +68,28 @@ function HostSessionGate({ children }: { children: ReactNode }) {
   return <Fragment key={remountKey}>{children}</Fragment>;
 }
 
+/** Vault / auth / cloud sync — only for the desktop shelf and account routes. */
+function AppShellProviders({ children }: { children: ReactNode }) {
+  return (
+    <HostSessionGate>
+      <AuthProvider>
+        <VaultProvider>
+          <SyncStatusProvider>
+            <DesktopHostSync />
+            <NativeCursorSync />
+            <CloudSync />
+            {children}
+            <Toaster richColors />
+          </SyncStatusProvider>
+        </VaultProvider>
+      </AuthProvider>
+    </HostSessionGate>
+  );
+}
+
 export default function Providers({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  // Marketing site is light; desktop shelf (/app) + account stay dark.
-  const isLanding =
-    !pathname ||
-    pathname === "/" ||
-    pathname.startsWith("/download") ||
-    pathname.startsWith("/landing");
+  const isLanding = isMarketingPath(pathname);
 
   return (
     <ThemeProvider
@@ -76,19 +99,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       forcedTheme={isLanding ? "light" : "dark"}
       disableTransitionOnChange
     >
-      <HostSessionGate>
-        <AuthProvider>
-          <VaultProvider>
-            <SyncStatusProvider>
-              <DesktopHostSync />
-              <NativeCursorSync />
-              <CloudSync />
-              {children}
-              <Toaster richColors />
-            </SyncStatusProvider>
-          </VaultProvider>
-        </AuthProvider>
-      </HostSessionGate>
+      {isLanding ? children : <AppShellProviders>{children}</AppShellProviders>}
     </ThemeProvider>
   );
 }

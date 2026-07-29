@@ -168,7 +168,12 @@ export async function trySoftDeletePinboard(
 
 export async function tryPullEncryptedClips(
   vaultKey: Uint8Array,
-  opts?: { full?: boolean; onPage?: PullClipsOptions["onPage"]; signal?: AbortSignal },
+  opts?: {
+    full?: boolean;
+    onPage?: PullClipsOptions["onPage"];
+    signal?: AbortSignal;
+    onFirstPage?: () => void;
+  },
 ): Promise<PullClipsResult> {
   const client = getSupabaseNative();
   if (!client) return { items: [], failedCount: 0, maxUpdatedAt: null };
@@ -177,10 +182,20 @@ export async function tryPullEncryptedClips(
   } = await client.auth.getSession();
   if (!session) return { items: [], failedCount: 0, maxUpdatedAt: null };
   const since = opts?.full ? undefined : await loadClipsPullCursor(session.user.id);
+  let first = true;
   const result = await pullClips(client, session.user.id, vaultKey, {
     since,
-    onPage: opts?.onPage,
+    strategy: since ? "incremental" : "full",
+    // Hermes is heavier than desktop — keep concurrency moderate.
+    decryptConcurrency: 8,
     signal: opts?.signal,
+    onPage: (page, meta) => {
+      if (first && page.length > 0) {
+        first = false;
+        opts?.onFirstPage?.();
+      }
+      opts?.onPage?.(page, meta);
+    },
   });
   if (result.maxUpdatedAt) {
     await saveClipsPullCursor(session.user.id, result.maxUpdatedAt);

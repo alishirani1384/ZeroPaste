@@ -64,7 +64,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setOfflineChosen(false);
       }
     });
-    return () => sub.subscription.unsubscribe();
+
+    // Desktop WebView can sit overnight with an expired access token — refresh on focus.
+    const refreshOnFocus = () => {
+      void client.auth.getSession().then(({ data }) => {
+        setSession(data.session);
+        if (data.session) {
+          localStorage.removeItem(OFFLINE_KEY);
+          setOfflineChosen(false);
+        }
+      });
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refreshOnFocus();
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      sub.subscription.unsubscribe();
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [client]);
 
   const signIn = useCallback(

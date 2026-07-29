@@ -188,7 +188,7 @@ export function HistoryScreen() {
     clips.length === 0 && (!store.ready || phase === "pulling" || awaitingFirstCloudPull);
   const loadingLabel = !store.ready
     ? "Loading history…"
-    : detail || "Restoring from cloud…";
+    : detail || "Restoring in background…";
 
   const canPullToRefresh =
     vault.unlocked && !vault.recoveryKeyOnce && !!auth.session && auth.configured;

@@ -76,9 +76,14 @@ export function CloudSync() {
       if (pullInFlight.current) return;
       pullInFlight.current = true;
 
-      const busyLabel = opts.reason === "manual" ? "Checking cloud…" : "Restoring from cloud…";
+      const busyLabel =
+        opts.reason === "manual" ? "Checking cloud…" : "Restoring in background…";
       setPhase("pulling", busyLabel);
-      let toastId: string | number | undefined;
+      if (opts.reason === "initial") {
+        toast.message("Restoring your library in the background — you can keep working", {
+          duration: 3200,
+        });
+      }
 
       try {
         void tryRegisterDevice();
@@ -89,6 +94,10 @@ export function CloudSync() {
 
         const [clipsResult, boardsResult] = await Promise.all([
           tryPullEncryptedClips(key, {
+            onFirstPage: () => {
+              // Unlock local push / realtime apply as soon as the newest page lands.
+              pulledRef.current = true;
+            },
             onPage: (page) => {
               if (page.length === 0) return;
               applied += page.length;
@@ -97,7 +106,9 @@ export function CloudSync() {
                 "pulling",
                 opts.reason === "manual"
                   ? `Updating… ${applied} clips`
-                  : `Restoring… ${applied} clips`,
+                  : applied <= 80
+                    ? `Restoring… ${applied} clips`
+                    : `Library ready — restoring older clips (${applied})…`,
               );
             },
           }),
@@ -148,17 +159,12 @@ export function CloudSync() {
           (c) => beforeIds.has(c.id) && beforeHashes.get(c.id) !== c.contentHash,
         );
 
-        // Pages already merged via onPage; still merge once if nothing streamed
-        // (e.g. empty incremental) or to catch any race.
+        // Pages already merged via onPage; still merge once if nothing streamed.
         if (remote.length > 0 && applied === 0) {
-          if (opts.reason === "initial" && live.length > 0) {
-            toastId = toast.loading("Restoring clips from cloud…");
-          }
           const ok = await mergeClipsFromCloud(remote);
           if (!ok) {
             setPhase("error", "Could not apply cloud clips to this device");
             toast.error("Cloud clips fetched but failed to show on this device", {
-              id: toastId,
               duration: 6000,
             });
             return;
@@ -187,12 +193,12 @@ export function CloudSync() {
           }
         } else if (live.length > 0) {
           setPhase("synced", `Restored ${live.length} clips`);
-          toast.success(`Restored ${live.length} clip${live.length === 1 ? "" : "s"} from cloud`, {
-            id: toastId,
-          });
+          toast.success(
+            `Library restored — ${live.length} clip${live.length === 1 ? "" : "s"}`,
+            { duration: 2800 },
+          );
         } else {
           setPhase("synced", remote.length > 0 ? "Up to date" : "Cloud ready");
-          if (toastId !== undefined) toast.dismiss(toastId);
         }
       } catch (err) {
         console.warn("[ZeroPaste] pull failed", err);

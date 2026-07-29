@@ -53,9 +53,23 @@ export async function saveWebSession(keys: Record<string, string>): Promise<WebS
     console.warn("[ZeroPaste] refusing empty web-session overwrite");
     return prev;
   }
+
+  // Guard: a refresh-race can clear sb-* from the WebView while vault keys remain.
+  // Don't wipe durable auth on the host in that case (explicit sign-out clears vault unlock too).
+  const merged: Record<string, string> = { ...keys };
+  const incomingHasVault = Object.keys(keys).some((k) => k.startsWith("zeropaste.vault."));
+  const incomingHasAuth = Object.keys(keys).some((k) => k.startsWith("sb-"));
+  const prevHasAuth = Object.keys(prev.keys).some((k) => k.startsWith("sb-"));
+  if (incomingHasVault && !incomingHasAuth && prevHasAuth) {
+    for (const [k, v] of Object.entries(prev.keys)) {
+      if (k.startsWith("sb-")) merged[k] = v;
+    }
+    console.warn("[ZeroPaste] preserving host auth keys missing from flush");
+  }
+
   const next: WebSessionBlob = {
     version: 1,
-    keys: { ...keys },
+    keys: merged,
     updatedAt: new Date().toISOString(),
   };
   await atomicWriteSealed(FILE, JSON.stringify(next, null, 2));
@@ -67,6 +81,8 @@ export async function saveWebSession(keys: Record<string, string>): Promise<WebS
     Boolean(next.keys["zeropaste.vault.meta"]),
     "unlock=",
     Boolean(next.keys["zeropaste.vault.unlockSession"]),
+    "auth=",
+    Object.keys(next.keys).some((k) => k.startsWith("sb-")),
   );
   return next;
 }

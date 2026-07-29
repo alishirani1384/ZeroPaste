@@ -41,8 +41,8 @@ export function SyncStatusPopover({ anchorRect, onClose }: Props) {
   let tone: "ok" | "warn" | "err" | "busy" | "mute" = "mute";
 
   if (phase === "pulling") {
-    title = "Restoring…";
-    body = detail ?? "Pulling encrypted clips from the cloud";
+    title = "Restoring in background";
+    body = detail ?? "Newest clips appear first — you can keep using ZeroPaste.";
     Icon = Loader2;
     tone = "busy";
   } else if (phase === "synced") {

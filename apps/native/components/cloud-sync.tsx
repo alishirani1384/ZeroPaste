@@ -45,17 +45,25 @@ export function CloudSync() {
   const pullFromCloud = useCallback(async () => {
     if (!shelfReady || !vaultKey || !userId) return;
     const key = vaultKey;
-    setPhase("pulling", "Refreshing from cloud…");
+    setPhase("pulling", "Refreshing in background…");
     try {
       void tryRegisterDevice();
       let applied = 0;
       const [clipsResult, boardsResult] = await Promise.all([
         tryPullEncryptedClips(key, {
+          onFirstPage: () => {
+            pulledRef.current = true;
+          },
           onPage: (page) => {
             if (page.length === 0) return;
             applied += page.length;
             store.upsertClips(page);
-            setPhase("pulling", `Refreshing… ${applied} clips`);
+            setPhase(
+              "pulling",
+              applied <= 80
+                ? `Refreshing… ${applied} clips`
+                : `Library ready — restoring older clips (${applied})…`,
+            );
           },
         }),
         tryPullEncryptedPinboards(key),
@@ -137,7 +145,7 @@ export function CloudSync() {
     const alreadyPulled = pulledUsers.has(userId);
 
     if (!alreadyPulled) {
-      setPhase("pulling", "Restoring from cloud…");
+      setPhase("pulling", "Restoring in background…");
     } else {
       // Quiet incremental catch-up; UI stays on synced unless something arrives.
       setPhase("synced");
@@ -149,12 +157,20 @@ export function CloudSync() {
         let applied = 0;
         const [clipsResult, boardsResult] = await Promise.all([
           tryPullEncryptedClips(key, {
+            onFirstPage: () => {
+              pulledRef.current = true;
+            },
             onPage: (page) => {
               if (cancelled || page.length === 0) return;
               applied += page.length;
               store.upsertClips(page);
               if (!alreadyPulled) {
-                setPhase("pulling", `Restoring… ${applied} clips`);
+                setPhase(
+                  "pulling",
+                  applied <= 80
+                    ? `Restoring… ${applied} clips`
+                    : `Library ready — restoring older clips (${applied})…`,
+                );
               }
             },
           }),

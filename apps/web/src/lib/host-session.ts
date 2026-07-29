@@ -62,6 +62,33 @@ function restoreVaultTrio(keys: Record<string, string>): number {
   return applied;
 }
 
+/** Restore Supabase auth blob from host when WebView has no `sb-*` keys. */
+function restoreAuthKeys(keys: Record<string, string>): number {
+  const hostAuth = Object.entries(keys).filter(
+    ([k, v]) => k.startsWith("sb-") && typeof v === "string" && v.length > 0,
+  );
+  if (hostAuth.length === 0) return 0;
+
+  let localHasAuth = false;
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k?.startsWith("sb-")) continue;
+    const v = localStorage.getItem(k);
+    if (v != null && v.length > 0) {
+      localHasAuth = true;
+      break;
+    }
+  }
+  if (localHasAuth) return 0;
+
+  let applied = 0;
+  for (const [k, v] of hostAuth) {
+    localStorage.setItem(k, v);
+    applied++;
+  }
+  return applied;
+}
+
 /** Pull host session into localStorage before Auth/Vault mount. */
 export async function hydrateWebSessionFromHost(): Promise<boolean> {
   if (typeof window === "undefined") {
@@ -101,6 +128,8 @@ export async function hydrateWebSessionFromHost(): Promise<boolean> {
 
       // Force-align vault trio from host when any piece is missing or secret was lost.
       applied += restoreVaultTrio(keys);
+      // Same for cloud auth — WebView often keeps vault unlock but drops `sb-*` tokens.
+      applied += restoreAuthKeys(keys);
 
       if (applied > 0) {
         console.info("[ZeroPaste] restored", applied, "session key(s) from host");

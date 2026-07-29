@@ -3,9 +3,15 @@ export const LANDING_NAV = {
   cta: { href: "/download", label: "Try for free" },
 } as const;
 
-/** Update these when release / store listings go live. */
+/** Keep in sync with GitHub Releases + README download table. */
 export const DOWNLOAD_LINKS = {
-  githubReleases: "https://github.com/OWNER/REPO/releases/latest",
+  githubReleases: "https://github.com/alishirani1384/ZeroPaste/releases",
+  windows:
+    "https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.5/ZeroPaste-desktop-v1.0.5-Setup.zip",
+  linux:
+    "https://github.com/alishirani1384/ZeroPaste/releases/download/desktop-v1.0.5/ZeroPaste-desktop-v1.0.5-linux-x64-Setup.tar.gz",
+  android:
+    "https://github.com/alishirani1384/ZeroPaste/releases/download/android-v2.0.1/ZeroPaste-android-v2.0.1.apk",
   myket: "#",
   bazaar: "#",
 } as const;
@@ -31,22 +37,34 @@ export const DOWNLOAD_PLATFORMS = [
     options: [
       {
         id: "github",
-        label: "GitHub Releases",
-        href: DOWNLOAD_LINKS.githubReleases,
+        label: "Download for Windows",
+        href: DOWNLOAD_LINKS.windows,
         primary: true,
+      },
+      {
+        id: "all",
+        label: "All releases",
+        href: DOWNLOAD_LINKS.githubReleases,
+        primary: false,
       },
     ],
   },
   {
     id: "linux",
     label: "Linux",
-    description: "AppImage and packages",
+    description: "x64 · Ubuntu 22.04+",
     options: [
       {
         id: "github",
-        label: "GitHub Releases",
-        href: DOWNLOAD_LINKS.githubReleases,
+        label: "Download for Linux",
+        href: DOWNLOAD_LINKS.linux,
         primary: true,
+      },
+      {
+        id: "all",
+        label: "All releases",
+        href: DOWNLOAD_LINKS.githubReleases,
+        primary: false,
       },
     ],
   },
@@ -57,8 +75,8 @@ export const DOWNLOAD_PLATFORMS = [
     options: [
       {
         id: "github",
-        label: "GitHub Releases",
-        href: DOWNLOAD_LINKS.githubReleases,
+        label: "Download APK",
+        href: DOWNLOAD_LINKS.android,
         primary: true,
       },
       {

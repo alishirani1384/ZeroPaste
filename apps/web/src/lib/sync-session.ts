@@ -210,7 +210,13 @@ export async function trySoftDeletePinboard(
 
 export async function tryPullEncryptedClips(
   vaultKey: Uint8Array,
-  opts?: { full?: boolean; onPage?: PullClipsOptions["onPage"]; signal?: AbortSignal },
+  opts?: {
+    full?: boolean;
+    onPage?: PullClipsOptions["onPage"];
+    signal?: AbortSignal;
+    /** Mark first page applied so shelf can unlock push/UI early. */
+    onFirstPage?: () => void;
+  },
 ): Promise<PullClipsResult> {
   const client = getSupabaseBrowser();
   if (!client) return { items: [], failedCount: 0, maxUpdatedAt: null };
@@ -220,10 +226,19 @@ export async function tryPullEncryptedClips(
   if (!session) return { items: [], failedCount: 0, maxUpdatedAt: null };
   try {
     const since = opts?.full ? undefined : await loadClipsPullCursor(session.user.id);
+    let first = true;
     const result = await pullClips(client, session.user.id, vaultKey, {
       since,
-      onPage: opts?.onPage,
+      strategy: since ? "incremental" : "full",
+      decryptConcurrency: 16,
       signal: opts?.signal,
+      onPage: (page, meta) => {
+        if (first && page.length > 0) {
+          first = false;
+          opts?.onFirstPage?.();
+        }
+        opts?.onPage?.(page, meta);
+      },
     });
     if (result.maxUpdatedAt) {
       await saveClipsPullCursor(session.user.id, result.maxUpdatedAt);
