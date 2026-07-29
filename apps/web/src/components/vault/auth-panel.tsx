@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { upsertVaultMetaBlob, fetchVaultMetaBlob } from "@paste/sync";
+import { resolveVaultForUser, safeUpsertVaultMetaBlob } from "@paste/sync";
 
 import { PasswordField } from "@/components/password-field";
 import { useVault } from "@/components/vault/vault-context";
 import { getAutostartEnabled, setAutostartEnabled } from "@/lib/bridge";
 import { useAuth } from "@/lib/auth-session";
+import { clearSignedOutMark } from "@/lib/vault-storage";
 
 export function AuthPanel() {
   const auth = useAuth();
@@ -71,18 +72,33 @@ export function AuthPanel() {
         setMessage(msg);
       } else {
         await auth.signIn(email, password);
-        if (auth.client && vault.meta) {
+        clearSignedOutMark();
+        if (auth.client) {
           const {
             data: { session },
           } = await auth.client.auth.getSession();
           if (session) {
-            const remoteMeta = await fetchVaultMetaBlob(auth.client, session.user.id);
-            if (!remoteMeta) {
-              await upsertVaultMetaBlob(auth.client, session.user.id, vault.meta);
-            } else if (remoteMeta.saltB64 !== vault.meta.saltB64) {
-              vault.adoptMeta(remoteMeta);
+            const parked = vault.loadParkedForUser(session.user.id);
+            const resolved = await resolveVaultForUser(
+              auth.client,
+              session.user.id,
+              parked ?? vault.meta,
+            );
+            vault.applyBoundMeta(resolved.meta, { clearUnlock: resolved.mustRelock });
+            if (resolved.source === "cloud" && resolved.mustRelock) {
               setMessage("Found an existing cloud vault — unlock with that vault's passphrase.");
               return;
+            }
+            if (resolved.meta && vault.unlocked) {
+              const up = await safeUpsertVaultMetaBlob(
+                auth.client,
+                session.user.id,
+                resolved.meta,
+              );
+              if (up === "conflict") {
+                setMessage("Cloud vault differs — lock and unlock with your account passphrase.");
+                return;
+              }
             }
           }
         }
@@ -110,7 +126,7 @@ export function AuthPanel() {
             type="button"
             className="zp-gate-primary"
             onClick={() => {
-              vault.lock();
+              vault.prepareSignOut();
               void auth.signOut();
             }}
           >

@@ -55,12 +55,17 @@ export async function saveWebSession(keys: Record<string, string>): Promise<WebS
   }
 
   // Guard: a refresh-race can clear sb-* from the WebView while vault keys remain.
-  // Don't wipe durable auth on the host in that case (explicit sign-out clears vault unlock too).
+  // Don't wipe durable auth on the host in that case — unless the user intentionally signed out.
   const merged: Record<string, string> = { ...keys };
+  const intentionalSignOut = keys["zeropaste.auth.signedOut"] === "1";
   const incomingHasVault = Object.keys(keys).some((k) => k.startsWith("zeropaste.vault."));
   const incomingHasAuth = Object.keys(keys).some((k) => k.startsWith("sb-"));
   const prevHasAuth = Object.keys(prev.keys).some((k) => k.startsWith("sb-"));
-  if (incomingHasVault && !incomingHasAuth && prevHasAuth) {
+  if (intentionalSignOut) {
+    for (const k of Object.keys(merged)) {
+      if (k.startsWith("sb-")) delete merged[k];
+    }
+  } else if (incomingHasVault && !incomingHasAuth && prevHasAuth) {
     for (const [k, v] of Object.entries(prev.keys)) {
       if (k.startsWith("sb-")) merged[k] = v;
     }

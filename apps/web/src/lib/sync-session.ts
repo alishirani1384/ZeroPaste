@@ -240,7 +240,7 @@ export async function tryPullEncryptedClips(
         opts?.onPage?.(page, meta);
       },
     });
-    if (result.maxUpdatedAt) {
+    if (result.maxUpdatedAt && !(result.failedCount > 0 && result.items.length === 0)) {
       await saveClipsPullCursor(session.user.id, result.maxUpdatedAt);
     }
     return result;

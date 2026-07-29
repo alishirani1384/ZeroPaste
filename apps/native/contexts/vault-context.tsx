@@ -8,18 +8,23 @@ import {
   type ReactNode,
 } from "react";
 import {
-  createLocalVault,
+  clearClipsPullCursor,
+  createOwnedLocalVault,
   unlockWithPassphrase,
   unlockWithRecovery,
+  withVaultOwner,
   type LocalVaultMeta,
 } from "@paste/sync";
 
 import {
   clearUnlockSession,
+  loadParkedVaultMeta,
   loadUnlockSession,
   loadVaultMeta,
+  parkAndClearActiveVault,
   saveUnlockSession,
   saveVaultMeta,
+  clearVaultMeta,
 } from "@/lib/vault-storage";
 
 type VaultContextValue = {
@@ -29,11 +34,14 @@ type VaultContextValue = {
   unlocked: boolean;
   recoveryKeyOnce: string | null;
   clearRecoveryKeyOnce: () => void;
-  setupVault: (passphrase: string) => Promise<void>;
-  unlock: (passphrase: string) => Promise<void>;
-  unlockRecovery: (recoveryKey: string) => Promise<void>;
+  setupVault: (passphrase: string, ownerUserId?: string | null) => Promise<void>;
+  unlock: (passphrase: string, ownerUserId?: string | null) => Promise<void>;
+  unlockRecovery: (recoveryKey: string, ownerUserId?: string | null) => Promise<void>;
   lock: () => Promise<void>;
   adoptMeta: (meta: LocalVaultMeta) => Promise<void>;
+  applyBoundMeta: (meta: LocalVaultMeta | null, opts?: { clearUnlock?: boolean }) => Promise<void>;
+  loadParkedForUser: (userId: string) => Promise<LocalVaultMeta | null>;
+  prepareSignOut: () => Promise<void>;
 };
 
 const VaultContext = createContext<VaultContextValue | null>(null);
@@ -58,8 +66,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const setupVault = useCallback(async (passphrase: string) => {
-    const created = await createLocalVault(passphrase);
+  const setupVault = useCallback(async (passphrase: string, ownerUserId?: string | null) => {
+    const created = await createOwnedLocalVault(passphrase, ownerUserId);
     await saveVaultMeta(created.meta);
     setMeta(created.meta);
     setVaultKey(created.vaultKey);
@@ -75,19 +83,60 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     const current = meta;
     await saveVaultMeta(next);
     setMeta(next);
-    // Different vault salt ⇒ existing vaultKey is wrong; force re-unlock.
-    if (current && current.saltB64 !== next.saltB64) {
+    if (!current || current.saltB64 !== next.saltB64) {
       await clearUnlockSession();
       setVaultKey(null);
+      if (next.ownerUserId) await clearClipsPullCursor(next.ownerUserId);
     }
   }, [meta]);
 
+  const applyBoundMeta = useCallback(
+    async (next: LocalVaultMeta | null, opts?: { clearUnlock?: boolean }) => {
+      const current = meta ?? (await loadVaultMeta());
+      const clearUnlock =
+        opts?.clearUnlock ??
+        (!next ||
+          !current ||
+          current.saltB64 !== next.saltB64 ||
+          current.ownerUserId !== next.ownerUserId);
+
+      if (next) {
+        await saveVaultMeta(next);
+        setMeta(next);
+      } else {
+        await clearVaultMeta();
+        setMeta(null);
+      }
+
+      if (clearUnlock) {
+        await clearUnlockSession();
+        setVaultKey(null);
+        setRecoveryKeyOnce(null);
+        if (next?.ownerUserId) await clearClipsPullCursor(next.ownerUserId);
+        if (current?.ownerUserId && current.ownerUserId !== next?.ownerUserId) {
+          await clearClipsPullCursor(current.ownerUserId);
+        }
+      }
+    },
+    [meta],
+  );
+
+  const loadParkedForUser = useCallback(
+    async (userId: string) => loadParkedVaultMeta(userId),
+    [],
+  );
+
   const unlock = useCallback(
-    async (passphrase: string) => {
+    async (passphrase: string, ownerUserId?: string | null) => {
       const current = meta ?? (await loadVaultMeta());
       if (!current) throw new Error("No vault found");
       const key = await unlockWithPassphrase(current, passphrase);
-      setMeta(current);
+      const owned =
+        ownerUserId || current.ownerUserId
+          ? withVaultOwner(current, ownerUserId ?? current.ownerUserId)
+          : current;
+      if (owned !== current) await saveVaultMeta(owned);
+      setMeta(owned);
       setVaultKey(key);
       try {
         await saveUnlockSession(key);
@@ -99,11 +148,16 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   );
 
   const unlockRecovery = useCallback(
-    async (recoveryKey: string) => {
+    async (recoveryKey: string, ownerUserId?: string | null) => {
       const current = meta ?? (await loadVaultMeta());
       if (!current) throw new Error("No vault found");
       const key = await unlockWithRecovery(current, recoveryKey);
-      setMeta(current);
+      const owned =
+        ownerUserId || current.ownerUserId
+          ? withVaultOwner(current, ownerUserId ?? current.ownerUserId)
+          : current;
+      if (owned !== current) await saveVaultMeta(owned);
+      setMeta(owned);
       setVaultKey(key);
       try {
         await saveUnlockSession(key);
@@ -119,6 +173,14 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     setVaultKey(null);
   }, []);
 
+  const prepareSignOut = useCallback(async () => {
+    const current = meta ?? (await loadVaultMeta());
+    await parkAndClearActiveVault(current?.ownerUserId);
+    setMeta(null);
+    setVaultKey(null);
+    setRecoveryKeyOnce(null);
+  }, [meta]);
+
   const value = useMemo<VaultContextValue>(
     () => ({
       ready,
@@ -132,8 +194,24 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       unlockRecovery,
       lock,
       adoptMeta,
+      applyBoundMeta,
+      loadParkedForUser,
+      prepareSignOut,
     }),
-    [ready, meta, vaultKey, recoveryKeyOnce, setupVault, unlock, unlockRecovery, lock, adoptMeta],
+    [
+      ready,
+      meta,
+      vaultKey,
+      recoveryKeyOnce,
+      setupVault,
+      unlock,
+      unlockRecovery,
+      lock,
+      adoptMeta,
+      applyBoundMeta,
+      loadParkedForUser,
+      prepareSignOut,
+    ],
   );
 
   return <VaultContext.Provider value={value}>{children}</VaultContext.Provider>;

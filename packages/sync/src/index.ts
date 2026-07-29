@@ -119,6 +119,13 @@ export {
   type LocalVaultMeta,
 } from "./vault-profile";
 export {
+  withVaultOwner,
+  vaultMetaBelongsToUser,
+  resolveVaultForUser,
+  safeUpsertVaultMetaBlob,
+  createOwnedLocalVault,
+} from "./vault-bind";
+export {
   registerDevice,
   loadLocalDeviceId,
   saveLocalDeviceId,

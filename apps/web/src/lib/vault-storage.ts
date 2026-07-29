@@ -13,6 +13,12 @@ import { scheduleHostSessionFlush } from "@/lib/host-session";
 const META_KEY = "zeropaste.vault.meta";
 const UNLOCK_SESSION_KEY = "zeropaste.vault.unlockSession";
 const DEVICE_SECRET_KEY = "zeropaste.vault.deviceSecret";
+/** Set on intentional sign-out so desktop host must not resurrect sb-* tokens. */
+export const SIGNED_OUT_KEY = "zeropaste.auth.signedOut";
+
+function metaSlotKey(userId: string) {
+  return `zeropaste.vault.meta.${userId}`;
+}
 
 /** Stay unlocked across launches for this long after each unlock/create. */
 export const UNLOCK_SESSION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -39,12 +45,58 @@ export function loadVaultMeta(): LocalVaultMeta | null {
 
 export function saveVaultMeta(meta: LocalVaultMeta) {
   localStorage.setItem(META_KEY, JSON.stringify(meta));
+  if (meta.ownerUserId) {
+    localStorage.setItem(metaSlotKey(meta.ownerUserId), JSON.stringify(meta));
+  }
   mirror();
 }
 
 export function clearVaultMeta() {
   localStorage.removeItem(META_KEY);
   mirror();
+}
+
+/** Park active meta under its owner slot (or given user), then clear active + unlock. */
+export function parkAndClearActiveVault(ownerUserId?: string | null) {
+  const meta = loadVaultMeta();
+  const uid = ownerUserId ?? meta?.ownerUserId;
+  if (meta && uid) {
+    localStorage.setItem(
+      metaSlotKey(uid),
+      JSON.stringify({ ...meta, ownerUserId: uid }),
+    );
+  }
+  clearUnlockSession();
+  clearVaultMeta();
+}
+
+export function loadParkedVaultMeta(userId: string): LocalVaultMeta | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(metaSlotKey(userId));
+    if (!raw) return null;
+    const meta = JSON.parse(raw) as LocalVaultMeta;
+    return { ...meta, ownerUserId: userId };
+  } catch {
+    return null;
+  }
+}
+
+export function markSignedOut() {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(SIGNED_OUT_KEY, "1");
+  mirror();
+}
+
+export function clearSignedOutMark() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(SIGNED_OUT_KEY);
+  mirror();
+}
+
+export function isSignedOutMarked() {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(SIGNED_OUT_KEY) === "1";
 }
 
 /** Read existing device secret — never mints (minting on load can wipe unlock). */

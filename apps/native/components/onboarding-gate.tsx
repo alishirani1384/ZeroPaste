@@ -9,15 +9,14 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { upsertVaultMetaBlob } from "@paste/sync";
+import { resolveVaultForUser, safeUpsertVaultMetaBlob } from "@paste/sync";
 import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { NativeButton } from "@/components/native-ui";
 import { useAuth } from "@/contexts/auth-context";
 import { useVault } from "@/contexts/vault-context";
-import { probeCloudVaultMeta } from "@/components/cloud-sync";
-import { saveVaultMeta } from "@/lib/vault-storage";
+import { useClipStore } from "@/contexts/clip-store";
 import { getSupabaseNative } from "@/lib/supabase";
 import { colors, radii } from "@/lib/theme";
 import { useAppTheme } from "@/contexts/app-theme-context";
@@ -29,6 +28,7 @@ import { useAppTheme } from "@/contexts/app-theme-context";
 export function OnboardingGate({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const vault = useVault();
+  const clips = useClipStore();
   const insets = useSafeAreaInsets();
   const { isDark } = useAppTheme();
 
@@ -50,53 +50,62 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
   const bg = isDark ? colors.groupedDark : colors.groupedLight;
   const card = isDark ? colors.cardDark : colors.cardLight;
   const line = isDark ? colors.lineDark : colors.lineLight;
-  const probeCloudVault = useCallback(
-    async (userId: string): Promise<boolean> => {
+  const bindVaultToUser = useCallback(
+    async (userId: string): Promise<"found" | "none"> => {
       const sb = auth.client ?? getSupabaseNative();
       if (!sb) {
         setCloudProbe("none");
-        return false;
+        return "none";
       }
-      if (probeForUser.current === userId && vault.meta) {
+      if (probeForUser.current === userId && vault.meta?.ownerUserId === userId) {
         setCloudProbe("found");
-        return true;
+        return "found";
       }
       probeForUser.current = userId;
       setCloudProbe("loading");
       try {
-        const meta = await probeCloudVaultMeta(sb, userId);
-        if (meta) {
-          await saveVaultMeta(meta);
-          await vault.adoptMeta(meta);
+        const parked = await vault.loadParkedForUser(userId);
+        const resolved = await resolveVaultForUser(sb, userId, parked ?? vault.meta);
+        const prevOwner = vault.meta?.ownerUserId;
+        await vault.applyBoundMeta(resolved.meta, { clearUnlock: resolved.mustRelock });
+        if (resolved.mustRelock && prevOwner && prevOwner !== userId) {
+          await clips.clearLibrary();
+        }
+        if (resolved.meta) {
           setCloudProbe("found");
-          return true;
+          return "found";
         }
         setCloudProbe("none");
-        return false;
+        return "none";
       } catch (err) {
         console.warn("[ZeroPaste] vault cloud restore probe failed", err);
-        setCloudProbe("none");
-        return false;
+        setCloudProbe("loading");
+        probeForUser.current = null;
+        return "none";
       }
     },
-    [auth.client, vault],
+    [auth.client, vault, clips],
   );
 
   useEffect(() => {
-    if (!auth.session || vault.meta || vault.unlocked) return;
-    if (probeForUser.current === auth.session.user.id) return;
+    if (!auth.session || vault.unlocked) return;
+    const uid = auth.session.user.id;
+    if (vault.meta?.ownerUserId === uid && probeForUser.current === uid) return;
     if (cloudProbe === "loading") return;
-    void probeCloudVault(auth.session.user.id);
-  }, [auth.session, vault.meta, vault.unlocked, cloudProbe, probeCloudVault]);
+    void bindVaultToUser(uid);
+  }, [auth.session, vault.meta?.ownerUserId, vault.unlocked, cloudProbe, bindVaultToUser]);
 
   useEffect(() => {
     if (!vault.unlocked || vault.recoveryKeyOnce || !vault.meta || !auth.session) return;
     const sb = auth.client ?? getSupabaseNative();
     if (!sb) return;
     const uid = auth.session.user.id;
+    if (vault.meta.ownerUserId && vault.meta.ownerUserId !== uid) return;
     if (uploadedMetaFor.current === uid) return;
     uploadedMetaFor.current = uid;
-    void upsertVaultMetaBlob(sb, uid, vault.meta).catch((err) => {
+    void safeUpsertVaultMetaBlob(sb, uid, vault.meta).then((result) => {
+      if (result === "conflict") uploadedMetaFor.current = null;
+    }).catch((err) => {
       console.warn("[ZeroPaste] vault meta upload failed", err);
       uploadedMetaFor.current = null;
     });
@@ -151,15 +160,11 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
               setCloudProbe("loading");
               try {
                 await auth.signIn(email.trim(), password);
-                if (!vault.meta) {
-                  const sb = auth.client ?? getSupabaseNative();
-                  const { data } = (await sb?.auth.getSession()) ?? { data: { session: null } };
-                  const uid = data.session?.user.id;
-                  if (sb && uid) await probeCloudVault(uid);
-                  else setCloudProbe("none");
-                } else {
-                  setCloudProbe("idle");
-                }
+                const sb = auth.client ?? getSupabaseNative();
+                const { data } = (await sb?.auth.getSession()) ?? { data: { session: null } };
+                const uid = data.session?.user.id;
+                if (sb && uid) await bindVaultToUser(uid);
+                else setCloudProbe("none");
               } catch (e) {
                 setError(e instanceof Error ? e.message : "Sign in failed");
                 setCloudProbe("idle");
@@ -202,13 +207,28 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
     );
   }
 
+  const sessionUserId = auth.session?.user.id;
   const awaitingCloudVault =
-    Boolean(auth.session) && !vault.meta && !vault.unlocked && cloudProbe !== "none";
+    Boolean(sessionUserId) &&
+    !vault.unlocked &&
+    (cloudProbe === "loading" || cloudProbe === "idle") &&
+    vault.meta?.ownerUserId !== sessionUserId;
 
   if (awaitingCloudVault) {
     return (
       <GateShell bg={bg} insetsTop={insets.top} insetsBottom={insets.bottom}>
         <BusyBlock ink={ink} muted={muted} label="Restoring Vault" detail="Looking for your encrypted vault" />
+        <View style={styles.actions}>
+          <NativeButton
+            label="Retry"
+            variant="secondary"
+            disabled={busy || cloudProbe === "loading"}
+            onPress={() => {
+              probeForUser.current = null;
+              if (auth.session) void bindVaultToUser(auth.session.user.id);
+            }}
+          />
+        </View>
       </GateShell>
     );
   }
@@ -248,6 +268,7 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
   if (vault.unlocked) return <>{children}</>;
 
   const isSetup = !vault.meta;
+  const ownerId = auth.session?.user.id ?? null;
 
   const submit = async () => {
     if (busy) return;
@@ -273,12 +294,15 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
         if (isSetup) {
           if (pass.length < 8) throw new Error("Use at least 8 characters");
           if (pass !== pass2) throw new Error("Passphrases do not match");
-          await vault.setupVault(pass);
+          if (auth.session && cloudProbe !== "none") {
+            throw new Error("Still checking cloud vault — wait or tap Retry");
+          }
+          await vault.setupVault(pass, ownerId);
         } else if (mode === "recovery") {
-          await vault.unlockRecovery(pass.trim());
+          await vault.unlockRecovery(pass.trim(), ownerId);
         } else {
           if (!pass.trim()) throw new Error("Enter your vault passphrase");
-          await vault.unlock(pass);
+          await vault.unlock(pass, ownerId);
         }
       };
       await Promise.race([run(), unlockTimeout]);

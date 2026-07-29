@@ -27,6 +27,8 @@ type ClipStoreValue = {
   upsertPinboard: (board: Pinboard) => void;
   pinClipToBoard: (clipId: string, boardId: string) => void;
   unpinClipFromBoard: (clipId: string, boardId: string) => void;
+  /** Wipe local plaintext library (account switch). */
+  clearLibrary: () => Promise<void>;
 };
 
 const ClipStoreContext = createContext<ClipStoreValue | null>(null);
@@ -179,6 +181,14 @@ export function ClipStoreProvider({ children }: { children: ReactNode }) {
     [pinboards, schedulePersist],
   );
 
+  const clearLibrary = useCallback(async () => {
+    if (persistTimer.current) clearTimeout(persistTimer.current);
+    setClips([]);
+    setPinboardsState([]);
+    await writeJson(CLIPS_KEY, []);
+    await writeJson(BOARDS_KEY, []);
+  }, []);
+
   const value = useMemo(
     () => ({
       ready,
@@ -192,6 +202,7 @@ export function ClipStoreProvider({ children }: { children: ReactNode }) {
       upsertPinboard,
       pinClipToBoard,
       unpinClipFromBoard,
+      clearLibrary,
     }),
     [
       ready,
@@ -205,6 +216,7 @@ export function ClipStoreProvider({ children }: { children: ReactNode }) {
       upsertPinboard,
       pinClipToBoard,
       unpinClipFromBoard,
+      clearLibrary,
     ],
   );
 

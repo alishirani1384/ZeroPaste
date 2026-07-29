@@ -32,7 +32,7 @@ const pulledUsers = new Set<string>();
  * Full sync after the vault is ready for the shelf (unlocked AND recovery key dismissed).
  */
 export function CloudSync() {
-  const { vaultKey, unlocked, recoveryKeyOnce } = useVault();
+  const { vaultKey, unlocked, recoveryKeyOnce, meta } = useVault();
   const auth = useAuth();
   const { setPhase, registerRefreshHandler } = useSyncStatus();
   const userId = auth.session?.user?.id ?? null;
@@ -60,8 +60,10 @@ export function CloudSync() {
     prevUserIdRef.current = userId;
   }, [userId]);
 
-  // Shelf-ready: unlocked and past the recovery-key screen
-  const shelfReady = unlocked && !recoveryKeyOnce && !!vaultKey;
+  // Shelf-ready: unlocked, past recovery key, and vault belongs to this account (when signed in).
+  const vaultBound =
+    !userId || !meta?.ownerUserId || meta.ownerUserId === userId;
+  const shelfReady = unlocked && !recoveryKeyOnce && !!vaultKey && vaultBound;
 
   const pullFromCloud = useCallback(
     async (opts: { reason: "initial" | "manual" }) => {

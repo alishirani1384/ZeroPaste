@@ -64,6 +64,10 @@ function restoreVaultTrio(keys: Record<string, string>): number {
 
 /** Restore Supabase auth blob from host when WebView has no `sb-*` keys. */
 function restoreAuthKeys(keys: Record<string, string>): number {
+  // Intentional sign-out must not resurrect a previous account from the host blob.
+  if (keys["zeropaste.auth.signedOut"] === "1") return 0;
+  if (localStorage.getItem("zeropaste.auth.signedOut") === "1") return 0;
+
   const hostAuth = Object.entries(keys).filter(
     ([k, v]) => k.startsWith("sb-") && typeof v === "string" && v.length > 0,
   );

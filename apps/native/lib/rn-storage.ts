@@ -33,7 +33,15 @@ export const rnSyncStorage: SyncStorage = {
 };
 
 export async function hydrateRnStorage() {
-  const pairs = await AsyncStorage.multiGet([...PERSIST_KEYS]);
+  const allKeys = await AsyncStorage.getAllKeys();
+  const wanted = allKeys.filter(
+    (k) =>
+      PERSIST_KEYS.includes(k as (typeof PERSIST_KEYS)[number]) ||
+      k.startsWith("zeropaste.vault.meta.") ||
+      k.startsWith("zeropaste.sync.clipsCursor."),
+  );
+  if (wanted.length === 0) return;
+  const pairs = await AsyncStorage.multiGet(wanted);
   for (const [key, value] of pairs) {
     if (key && value != null) memory.set(key, value);
   }

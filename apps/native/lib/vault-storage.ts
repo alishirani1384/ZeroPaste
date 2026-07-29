@@ -22,16 +22,39 @@ type UnlockSessionStored = {
   wrap: WrappedKey;
 };
 
+function metaSlotKey(userId: string) {
+  return `zeropaste.vault.meta.${userId}`;
+}
+
 export async function loadVaultMeta(): Promise<LocalVaultMeta | null> {
   return readJson<LocalVaultMeta>(META_KEY);
 }
 
 export async function saveVaultMeta(meta: LocalVaultMeta) {
   await writeJson(META_KEY, meta);
+  if (meta.ownerUserId) {
+    await writeJson(metaSlotKey(meta.ownerUserId), meta);
+  }
 }
 
 export async function clearVaultMeta() {
   await removeKey(META_KEY);
+}
+
+export async function parkAndClearActiveVault(ownerUserId?: string | null) {
+  const meta = await loadVaultMeta();
+  const uid = ownerUserId ?? meta?.ownerUserId;
+  if (meta && uid) {
+    await writeJson(metaSlotKey(uid), { ...meta, ownerUserId: uid });
+  }
+  await clearUnlockSession();
+  await clearVaultMeta();
+}
+
+export async function loadParkedVaultMeta(userId: string): Promise<LocalVaultMeta | null> {
+  const meta = await readJson<LocalVaultMeta>(metaSlotKey(userId));
+  if (!meta) return null;
+  return { ...meta, ownerUserId: userId };
 }
 
 /** Read existing device secret — never mints (minting on load can wipe unlock). */

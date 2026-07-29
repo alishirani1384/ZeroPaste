@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
-import { fetchVaultMetaBlob, upsertVaultMetaBlob } from "@paste/sync";
+import { resolveVaultForUser, safeUpsertVaultMetaBlob } from "@paste/sync";
 import { toast } from "sonner";
 
 import { PasswordField } from "@/components/password-field";
@@ -19,7 +19,7 @@ import { useDesktopWindowFit } from "@/components/desktop-window-fit";
 import { setDesktopWindowMode, suppressCapture } from "@/lib/bridge";
 import { fitDesktopWindow } from "@/lib/window-fit";
 import { useAuth } from "@/lib/auth-session";
-import { saveVaultMeta } from "@/lib/vault-storage";
+import { clearSignedOutMark } from "@/lib/vault-storage";
 import { windowDragHandlers } from "@/lib/window-drag";
 
 import { useVault } from "./vault-context";
@@ -190,46 +190,52 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
     void setDesktopWindowMode(showingGate || blockForAuth || auth.loading ? "vault" : "panel");
   }, [showingGate, blockForAuth, auth.loading]);
 
-  const adoptMeta = vault.adoptMeta;
+  const applyBoundMeta = vault.applyBoundMeta;
 
-  /** Probe cloud for vault meta. Returns whether a vault was found. */
-  const probeCloudVault = async (userId: string): Promise<boolean> => {
+  /** Resolve cloud + parked local vault for this user. Never keeps another user's wraps. */
+  const bindVaultToUser = async (userId: string): Promise<"found" | "none"> => {
     if (!auth.client) {
       setCloudProbe("none");
-      return false;
+      return "none";
     }
-    // Already resolved for this user.
-    if (probeForUser.current === userId && vault.meta) {
+    if (probeForUser.current === userId && vault.meta?.ownerUserId === userId) {
       setCloudProbe("found");
-      return true;
+      return "found";
     }
     probeForUser.current = userId;
     setCloudProbe("loading");
     try {
-      const meta = await fetchVaultMetaBlob(auth.client, userId);
-      if (meta) {
-        saveVaultMeta(meta);
-        adoptMeta(meta);
+      clearSignedOutMark();
+      const parked = vault.loadParkedForUser(userId);
+      const resolved = await resolveVaultForUser(auth.client, userId, parked ?? vault.meta);
+      applyBoundMeta(resolved.meta, { clearUnlock: resolved.mustRelock });
+      if (resolved.meta) {
         setCloudProbe("found");
-        return true;
+        return "found";
       }
       setCloudProbe("none");
-      return false;
+      return "none";
     } catch (err) {
       console.warn("[ZeroPaste] vault cloud restore probe failed", err);
-      setCloudProbe("none");
-      return false;
+      // Do not offer create-vault after a failed probe — that overwrites cloud.
+      setCloudProbe("loading");
+      toast.error("Could not reach your cloud vault. Check your connection and try again.", {
+        duration: 6000,
+      });
+      probeForUser.current = null;
+      return "none";
     }
   };
 
-  // Boot / existing session: probe before showing create vs unlock.
+  // Boot / existing session: always rebind when signed in (even if foreign meta is present).
   useEffect(() => {
-    if (!auth.session || !auth.client || vault.meta || vault.unlocked) return;
-    if (probeForUser.current === auth.session.user.id) return;
-    if (cloudProbe === "loading") return; // sign-in handler already probing
-    void probeCloudVault(auth.session.user.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- probe once per signed-in user without local meta
-  }, [auth.session, auth.client, vault.meta, vault.unlocked, cloudProbe]);
+    if (!auth.session || !auth.client || vault.unlocked) return;
+    const uid = auth.session.user.id;
+    if (vault.meta?.ownerUserId === uid && probeForUser.current === uid) return;
+    if (cloudProbe === "loading") return;
+    void bindVaultToUser(uid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bind once per signed-in user
+  }, [auth.session, auth.client, vault.meta?.ownerUserId, vault.unlocked, cloudProbe]);
 
   // Upload vault wraps once after create/unlock (not while recovery key is still on screen).
   const uploadedMetaFor = useRef<string | null>(null);
@@ -238,9 +244,18 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
       return;
     }
     const uid = auth.session.user.id;
+    if (vault.meta.ownerUserId && vault.meta.ownerUserId !== uid) return;
     if (uploadedMetaFor.current === uid) return;
     uploadedMetaFor.current = uid;
-    void upsertVaultMetaBlob(auth.client, uid, vault.meta).catch((err) => {
+    void safeUpsertVaultMetaBlob(auth.client, uid, vault.meta).then((result) => {
+      if (result === "conflict") {
+        uploadedMetaFor.current = null;
+        toast.error(
+          "Cloud already has a different vault for this account. Unlock with that vault’s passphrase.",
+          { duration: 7000 },
+        );
+      }
+    }).catch((err) => {
       console.warn("[ZeroPaste] vault meta upload failed", err);
       uploadedMetaFor.current = null;
       toast.error(
@@ -258,12 +273,13 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
     try {
       await auth.signIn(email, password);
       const client = auth.client;
-      if (client && !vault.meta) {
+      if (client) {
         const {
           data: { session },
         } = await client.auth.getSession();
         const uid = session?.user.id;
-        if (uid) await probeCloudVault(uid);
+        if (uid) await bindVaultToUser(uid);
+        else setCloudProbe("none");
       } else {
         setCloudProbe("idle");
       }
@@ -427,8 +443,12 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
   }
 
   // Signed in, no local vault yet — wait for cloud probe before create/unlock UI.
+  const sessionUserId = auth.session?.user.id;
   const awaitingCloudVault =
-    Boolean(auth.session) && !vault.meta && !vault.unlocked && cloudProbe !== "none";
+    Boolean(sessionUserId) &&
+    !vault.unlocked &&
+    (cloudProbe === "loading" || cloudProbe === "idle") &&
+    vault.meta?.ownerUserId !== sessionUserId;
 
   if (awaitingCloudVault) {
     return (
@@ -441,10 +461,23 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
         cardClassName="zp-gate-card--loading"
       >
         <GateMark tone="quiet">
-          <Loader2 className="size-6 animate-spin" aria-hidden />
+          <Loader2 className="size-6 animate-spin" strokeWidth={1.75} aria-hidden />
         </GateMark>
-        <h1>Looking for your vault</h1>
-        <p className="zp-gate-lede">Checking the cloud for an encrypted vault on this account</p>
+        <p className="zp-gate-eyebrow">Cloud</p>
+        <h1>Restoring vault</h1>
+        <p className="zp-gate-lede">Looking up the encrypted vault for this account…</p>
+        {error ? <p className="zp-gate-error">{error}</p> : null}
+        <button
+          type="button"
+          className="zp-gate-secondary"
+          disabled={busy || cloudProbe === "loading"}
+          onClick={() => {
+            probeForUser.current = null;
+            if (auth.session) void bindVaultToUser(auth.session.user.id);
+          }}
+        >
+          Retry
+        </button>
       </GateShell>
     );
   }
@@ -495,6 +528,7 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
   if (vault.unlocked) return <>{children}</>;
 
   const isSetup = !vault.meta;
+  const ownerId = auth.session?.user.id ?? null;
   const strength = isSetup ? passphraseStrength(pass) : 0;
 
   const submit = async () => {
@@ -504,11 +538,15 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
       if (isSetup) {
         if (pass.length < 8) throw new Error("Use at least 8 characters");
         if (pass !== pass2) throw new Error("Passphrases do not match");
-        await vault.setupVault(pass);
+        // Signed-in create only after cloud confirmed empty.
+        if (auth.session && cloudProbe !== "none") {
+          throw new Error("Still checking cloud vault — wait or tap Retry");
+        }
+        await vault.setupVault(pass, ownerId);
       } else if (mode === "recovery") {
-        await vault.unlockRecovery(pass);
+        await vault.unlockRecovery(pass, ownerId);
       } else {
-        await vault.unlock(pass);
+        await vault.unlock(pass, ownerId);
       }
       setPass("");
       setPass2("");

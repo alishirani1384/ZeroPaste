@@ -31,6 +31,11 @@ export type LocalVaultMeta = {
   createdAt: string;
   /** Argon2 opts used to derive this vault's keys. Missing on pre-m=128MiB vaults. */
   kdf?: Argon2Opts;
+  /**
+   * Supabase user id that owns this vault on this device.
+   * Missing on legacy metas — treated as unbound (must not unlock under another account).
+   */
+  ownerUserId?: string;
 };
 
 export async function createLocalVault(passphrase: string): Promise<{

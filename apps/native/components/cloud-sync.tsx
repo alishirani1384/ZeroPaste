@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { Alert } from "react-native";
 import type { ClipItem } from "@paste/clipboard-core";
-import { fetchVaultMetaBlob, upsertVaultMetaBlob } from "@paste/sync";
+import { fetchVaultMetaBlob } from "@paste/sync";
 
 import { useAuth } from "@/contexts/auth-context";
 import { useClipStore } from "@/contexts/clip-store";
@@ -40,7 +40,11 @@ export function CloudSync() {
   const pulledRef = useRef(false);
   const prevUserIdRef = useRef<string | null>(null);
 
-  const shelfReady = unlocked && !recoveryKeyOnce && !!vaultKey;
+  const shelfReady =
+    unlocked &&
+    !recoveryKeyOnce &&
+    !!vaultKey &&
+    (!userId || !meta?.ownerUserId || meta.ownerUserId === userId);
 
   const pullFromCloud = useCallback(async () => {
     if (!shelfReady || !vaultKey || !userId) return;
@@ -125,12 +129,15 @@ export function CloudSync() {
     prevUserIdRef.current = userId;
   }, [userId]);
 
-  // Upload vault meta wraps once unlocked
+  // Upload vault meta wraps once unlocked (safe — refuses foreign / salt-mismatch overwrite)
   useEffect(() => {
     if (!shelfReady || !meta || !auth.session || !auth.client) return;
-    void upsertVaultMetaBlob(auth.client, auth.session.user.id, meta).catch((err) => {
-      console.warn("[ZeroPaste] vault meta upload failed", err);
-    });
+    if (meta.ownerUserId && meta.ownerUserId !== auth.session.user.id) return;
+    void import("@paste/sync").then(({ safeUpsertVaultMetaBlob }) =>
+      safeUpsertVaultMetaBlob(auth.client!, auth.session!.user.id, meta).catch((err) => {
+        console.warn("[ZeroPaste] vault meta upload failed", err);
+      }),
+    );
   }, [shelfReady, meta, auth.session, auth.client]);
 
   // Initial pull + realtime

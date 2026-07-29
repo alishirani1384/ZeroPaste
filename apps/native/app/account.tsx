@@ -188,6 +188,7 @@ export default function AccountScreen() {
               label="Sign Out"
               destructive
               onPress={async () => {
+                await vault.prepareSignOut();
                 await auth.signOut();
                 router.back();
               }}
