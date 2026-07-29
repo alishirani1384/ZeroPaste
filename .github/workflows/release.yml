@@ -228,6 +228,20 @@ jobs:
             console.log('version=' + cfg.version + ' versionCode=' + cfg.android?.versionCode);
           "
 
+      # Expo prebuild regenerates android/; pin enough heap for D8 mergeDexRelease.
+      - name: Raise Gradle heap for release dex
+        working-directory: apps/native/android
+        run: |
+          {
+            echo ""
+            echo "# CI: D8 mergeDexRelease OOMs on default ~2g heap"
+            echo "org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
+            echo "org.gradle.workers.max=2"
+            echo "kotlin.daemon.jvm.options=-Xmx2g"
+          } >> gradle.properties
+          echo "--- gradle.properties ---"
+          cat gradle.properties
+
       - name: Decode release keystore
         working-directory: apps/native/android/app
         env:
@@ -264,6 +278,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace
