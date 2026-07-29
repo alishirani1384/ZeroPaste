@@ -412,6 +412,7 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
           EXPO_PUBLIC_SERVER_URL: ${{ secrets.EXPO_PUBLIC_SERVER_URL }}
@@ -425,6 +426,7 @@ jobs:
             if [ -n "${KEY:-}" ]; then
               echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${KEY}"
             fi
+            echo "NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-https://zeropaste.vercel.app}"
             if [ -n "${EXPO_PUBLIC_SERVER_URL:-}" ]; then
               echo "NEXT_PUBLIC_SERVER_URL=${EXPO_PUBLIC_SERVER_URL}"
             fi
