@@ -7,10 +7,28 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 
 type Status = "working" | "ok" | "error";
 
+const SUCCESS_DETAIL =
+  "Your email is confirmed. Open ZeroPaste on desktop or Android and sign in with the same email and password.";
+
+function readCallbackParams() {
+  const url = new URL(window.location.href);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const code = url.searchParams.get("code");
+  const access_token = hash.get("access_token") ?? url.searchParams.get("access_token");
+  const refresh_token = hash.get("refresh_token") ?? url.searchParams.get("refresh_token");
+  const type = hash.get("type") ?? url.searchParams.get("type");
+  const errorDescription =
+    hash.get("error_description") ??
+    url.searchParams.get("error_description") ??
+    hash.get("error") ??
+    url.searchParams.get("error");
+  return { code, access_token, refresh_token, type, errorDescription };
+}
+
 /**
- * Supabase email confirmation / recovery lands here with tokens in the URL hash
- * (or ?code= for PKCE). Completes the session in the browser, then tells the
- * user to return to the desktop/mobile app and sign in.
+ * Supabase verifies the email *before* redirecting here. Tokens in the URL mean
+ * confirmation already succeeded — even if this site has no Supabase env vars
+ * (marketing deploy) we should still show success.
  */
 export default function AuthCallbackPage() {
   const [status, setStatus] = useState<Status>("working");
@@ -20,58 +38,58 @@ export default function AuthCallbackPage() {
     let cancelled = false;
 
     void (async () => {
-      const client = getSupabaseBrowser();
-      if (!client) {
+      const { code, access_token, refresh_token, type, errorDescription } = readCallbackParams();
+
+      if (errorDescription) {
         if (!cancelled) {
           setStatus("error");
-          setDetail("Supabase is not configured on this site.");
+          setDetail(decodeURIComponent(errorDescription.replace(/\+/g, " ")));
+        }
+        window.history.replaceState({}, document.title, "/auth/callback");
+        return;
+      }
+
+      const looksConfirmed = Boolean(
+        code || (access_token && refresh_token) || type === "signup" || type === "email",
+      );
+
+      const client = getSupabaseBrowser();
+      if (client) {
+        try {
+          if (code) {
+            const { error } = await client.auth.exchangeCodeForSession(code);
+            if (error) throw error;
+          } else if (access_token && refresh_token) {
+            const { error } = await client.auth.setSession({ access_token, refresh_token });
+            if (error) throw error;
+          }
+          // Desktop/mobile keep their own session — don't leave a browser login hanging.
+          await client.auth.signOut({ scope: "local" });
+        } catch (e) {
+          // Tokens in the URL still mean Supabase already confirmed the address.
+          if (!looksConfirmed) {
+            if (!cancelled) {
+              setStatus("error");
+              setDetail(e instanceof Error ? e.message : "Could not finish this link.");
+            }
+            window.history.replaceState({}, document.title, "/auth/callback");
+            return;
+          }
+        }
+      } else if (!looksConfirmed) {
+        if (!cancelled) {
+          setStatus("error");
+          setDetail(
+            "This confirmation link is missing tokens. Open the latest email from ZeroPaste, or sign in — if login works, your email is already confirmed.",
+          );
         }
         return;
       }
 
-      try {
-        const url = new URL(window.location.href);
-        const code = url.searchParams.get("code");
-        if (code) {
-          const { error } = await client.auth.exchangeCodeForSession(code);
-          if (error) throw error;
-        } else {
-          const hash = window.location.hash.replace(/^#/, "");
-          const params = new URLSearchParams(hash);
-          const access_token = params.get("access_token");
-          const refresh_token = params.get("refresh_token");
-          if (access_token && refresh_token) {
-            const { error } = await client.auth.setSession({
-              access_token,
-              refresh_token,
-            });
-            if (error) throw error;
-          } else {
-            // Link may already have been consumed; treat as confirmed if we have a session.
-            const { data } = await client.auth.getSession();
-            if (!data.session) {
-              throw new Error("No confirmation tokens found in this link.");
-            }
-          }
-        }
-
-        // Desktop/mobile keep their own session — don't leave a browser login hanging.
-        await client.auth.signOut({ scope: "local" });
-
-        // Strip secrets from the address bar.
-        window.history.replaceState({}, document.title, "/auth/callback");
-
-        if (!cancelled) {
-          setStatus("ok");
-          setDetail(
-            "Your email is confirmed. Open ZeroPaste on desktop or Android and sign in with the same email and password.",
-          );
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setStatus("error");
-          setDetail(e instanceof Error ? e.message : "Could not confirm this link.");
-        }
+      window.history.replaceState({}, document.title, "/auth/callback");
+      if (!cancelled) {
+        setStatus("ok");
+        setDetail(SUCCESS_DETAIL);
       }
     })();
 
